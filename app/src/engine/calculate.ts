@@ -1,9 +1,11 @@
 import type {
   TransactionContext,
   RuleVersion,
+  CalcResult,
   TransactionOutcome,
+  UnresolvedOutcome,
   TraceEntry,
-  DirectRewardRuleData,
+  RedemptionScenario,
 } from './types'
 
 function isEffective(rule: RuleVersion, date: string): boolean {
@@ -25,8 +27,33 @@ type EvalResult = {
 
 type MatchedResult = EvalResult & { matched: true; pointsBeforeCap: number; pointsAfterCap: number }
 
+function selectScenario(
+  context: TransactionContext,
+  scenarios: RedemptionScenario[]
+): RedemptionScenario | null {
+  const effective = scenarios.filter(
+    s =>
+      s.effectiveFrom <= context.transactionDate &&
+      (s.effectiveTo === null || s.effectiveTo >= context.transactionDate)
+  )
+  if (effective.length === 0) return null
+
+  const specific = effective.filter(
+    s =>
+      s.applicableCategories.length > 0 &&
+      s.applicableCategories.includes(context.merchantCategory)
+  )
+  const pool =
+    specific.length > 0
+      ? specific
+      : effective.filter(s => s.applicableCategories.length === 0)
+  if (pool.length === 0) return null
+
+  return pool.reduce((best, cur) => (cur.centsPerPoint > best.centsPerPoint ? cur : best))
+}
+
 function evalRule(context: TransactionContext, rule: RuleVersion): EvalResult {
-  const rd: DirectRewardRuleData = rule.ruleData
+  const rd = rule.ruleData
   const assumptions: string[] = []
 
   if (!isEffective(rule, context.transactionDate)) {
@@ -88,8 +115,9 @@ function evalRule(context: TransactionContext, rule: RuleVersion): EvalResult {
 
 export function calculate(
   context: TransactionContext,
-  rules: RuleVersion[]
-): TransactionOutcome {
+  rules: RuleVersion[],
+  scenarios: RedemptionScenario[] = []
+): CalcResult {
   const results = rules.map(rule => evalRule(context, rule))
 
   const matched = results.filter((r): r is MatchedResult => r.matched)
@@ -102,31 +130,61 @@ export function calculate(
   const entries: TraceEntry[] = results.map(r => {
     const isApplied = best !== null && r.rule.id === best.rule.id
     return {
-    ruleId: r.rule.id,
-    applied: isApplied,
-    reason: isApplied ? 'selected: highest earn rate among matching rules' : r.reason,
-    inputs: {
-      amount: context.amount,
-      merchantCategory: context.merchantCategory,
-      transactionDate: context.transactionDate,
-      pointsPerDollar: r.rule.ruleData.pointsPerDollar,
-      categories: r.rule.ruleData.categories,
-      exclusions: r.rule.ruleData.exclusions,
-      capPoints: r.rule.ruleData.capPoints,
-    },
-    assumptions: r.assumptions,
-    pointsBeforeCap: r.pointsBeforeCap,
-    pointsAfterCap: r.pointsAfterCap,
+      ruleId: r.rule.id,
+      applied: isApplied,
+      reason: isApplied ? 'selected: highest earn rate among matching rules' : r.reason,
+      inputs: {
+        amount: context.amount,
+        merchantCategory: context.merchantCategory,
+        transactionDate: context.transactionDate,
+        pointsPerDollar: r.rule.ruleData.pointsPerDollar,
+        categories: r.rule.ruleData.categories,
+        exclusions: r.rule.ruleData.exclusions,
+        capPoints: r.rule.ruleData.capPoints,
+      },
+      assumptions: r.assumptions,
+      pointsBeforeCap: r.pointsBeforeCap,
+      pointsAfterCap: r.pointsAfterCap,
     }
   })
 
+  const trace = { transactionId: context.transactionId, entries }
+
+  if (best !== null && best.rule.ruleData.ruleType === 'variable') {
+    const scenario = selectScenario(context, scenarios)
+    if (scenario === null) {
+      return {
+        resolved: false,
+        transactionId: context.transactionId,
+        reason: 'no Redemption Scenario covers this transaction',
+        rewardsEarned: best.pointsAfterCap,
+        ruleApplied: best.rule.id,
+        trace,
+      } satisfies UnresolvedOutcome
+    }
+    const grossReturn = Math.round(best.pointsAfterCap * scenario.centsPerPoint)
+    const annualFeeAmortizedCents =
+      scenario.annualFeeCents !== null ? Math.round(scenario.annualFeeCents / 12) : null
+    return {
+      resolved: true,
+      transactionId: context.transactionId,
+      rewardsEarned: best.pointsAfterCap,
+      ruleApplied: best.rule.id,
+      scenarioApplied: scenario.id,
+      netReturnCents: annualFeeAmortizedCents !== null ? grossReturn - annualFeeAmortizedCents : grossReturn,
+      annualFeeAmortizedCents,
+      trace,
+    } satisfies TransactionOutcome
+  }
+
   return {
+    resolved: true,
     transactionId: context.transactionId,
     rewardsEarned: best?.pointsAfterCap ?? 0,
     ruleApplied: best?.rule.id ?? null,
-    trace: {
-      transactionId: context.transactionId,
-      entries,
-    },
-  }
+    scenarioApplied: null,
+    netReturnCents: null,
+    annualFeeAmortizedCents: null,
+    trace,
+  } satisfies TransactionOutcome
 }

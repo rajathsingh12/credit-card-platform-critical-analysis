@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { calculate } from './calculate'
-import type { TransactionContext, RuleVersion } from './types'
+import type { TransactionContext, RuleVersion, RedemptionScenario } from './types'
 
 function makeContext(overrides: Partial<TransactionContext> = {}): TransactionContext {
   return {
@@ -37,6 +37,57 @@ function makeRule(
       pointsPerDollar: overrides.pointsPerDollar ?? 1,
       capPoints: overrides.capPoints !== undefined ? overrides.capPoints : null,
     },
+  }
+}
+
+function makeVariableRule(
+  id: string,
+  overrides: {
+    categories?: string[]
+    exclusions?: string[]
+    pointsPerDollar?: number
+    capPoints?: number | null
+    effectiveFrom?: string
+    effectiveTo?: string | null
+    cardId?: string
+  } = {}
+): RuleVersion {
+  return {
+    id,
+    cardId: overrides.cardId ?? 'card-1',
+    effectiveFrom: overrides.effectiveFrom ?? '2024-01-01',
+    effectiveTo: overrides.effectiveTo ?? null,
+    ruleData: {
+      ruleType: 'variable',
+      categories: overrides.categories ?? [],
+      exclusions: overrides.exclusions ?? [],
+      pointsPerDollar: overrides.pointsPerDollar ?? 1,
+      capPoints: overrides.capPoints !== undefined ? overrides.capPoints : null,
+    },
+  }
+}
+
+function makeScenario(
+  id: string,
+  overrides: {
+    redemptionType?: string
+    applicableCategories?: string[]
+    effectiveFrom?: string
+    effectiveTo?: string | null
+    centsPerPoint?: number
+    annualFeeCents?: number | null
+    cardId?: string
+  } = {}
+): RedemptionScenario {
+  return {
+    id,
+    cardId: overrides.cardId ?? 'card-1',
+    redemptionType: overrides.redemptionType ?? 'travel',
+    applicableCategories: overrides.applicableCategories ?? [],
+    effectiveFrom: overrides.effectiveFrom ?? '2024-01-01',
+    effectiveTo: overrides.effectiveTo ?? null,
+    centsPerPoint: overrides.centsPerPoint ?? 1.0,
+    annualFeeCents: overrides.annualFeeCents !== undefined ? overrides.annualFeeCents : null,
   }
 }
 
@@ -333,6 +384,228 @@ describe('no rules', () => {
   })
 })
 
+// --- variable rewards golden dataset ---
+
+describe('variable rewards — golden dataset', () => {
+  it('VGD-01: variable rule with scenario earns correct points and net return', () => {
+    // $100 at 3x = 300 points; 1.5 cpp → 450 cents
+    const outcome = calculate(
+      makeContext({ amount: 10000, merchantCategory: 'dining' }),
+      [makeVariableRule('r1', { categories: ['dining'], pointsPerDollar: 3 })],
+      [makeScenario('s1', { centsPerPoint: 1.5 })]
+    )
+    expect(outcome.resolved).toBe(true)
+    if (outcome.resolved) {
+      expect(outcome.rewardsEarned).toBe(300)
+      expect(outcome.scenarioApplied).toBe('s1')
+      expect(outcome.netReturnCents).toBe(450)
+    }
+  })
+
+  it('VGD-02: variable rule with no scenarios returns UnresolvedOutcome', () => {
+    const outcome = calculate(
+      makeContext({ amount: 10000, merchantCategory: 'dining' }),
+      [makeVariableRule('r1', { categories: ['dining'], pointsPerDollar: 3 })]
+    )
+    expect(outcome.resolved).toBe(false)
+    if (!outcome.resolved) {
+      expect(outcome.ruleApplied).toBe('r1')
+      expect(outcome.rewardsEarned).toBe(300)
+      expect(outcome.reason).toContain('Redemption Scenario')
+    }
+  })
+
+  it('VGD-03: variable rule cap limits points; scenario applied to capped value', () => {
+    // $500 at 3x = 1500 raw, cap=200; 2.0 cpp → 400 cents
+    const outcome = calculate(
+      makeContext({ amount: 50000, merchantCategory: 'dining' }),
+      [makeVariableRule('r1', { categories: ['dining'], pointsPerDollar: 3, capPoints: 200 })],
+      [makeScenario('s1', { centsPerPoint: 2.0 })]
+    )
+    expect(outcome.resolved).toBe(true)
+    if (outcome.resolved) {
+      expect(outcome.rewardsEarned).toBe(200)
+      expect(outcome.netReturnCents).toBe(400)
+    }
+  })
+
+  it('VGD-04: exclusion on variable rule prevents match; outcome is resolved with 0 points', () => {
+    const outcome = calculate(
+      makeContext({ amount: 5000, merchantCategory: 'dining' }),
+      [makeVariableRule('r1', { exclusions: ['dining'], pointsPerDollar: 3 })],
+      [makeScenario('s1')]
+    )
+    expect(outcome.resolved).toBe(true)
+    expect(outcome.rewardsEarned).toBe(0)
+    expect(outcome.ruleApplied).toBeNull()
+  })
+
+  it('VGD-05: annual fee amortized over 12 months in outcome', () => {
+    // $95/year = 9500 cents; 9500 / 12 = 791.67 → rounds to 792
+    const outcome = calculate(
+      makeContext({ amount: 10000, merchantCategory: 'dining' }),
+      [makeVariableRule('r1', { categories: ['dining'], pointsPerDollar: 1 })],
+      [makeScenario('s1', { centsPerPoint: 1.0, annualFeeCents: 9500 })]
+    )
+    expect(outcome.resolved).toBe(true)
+    if (outcome.resolved) {
+      expect(outcome.annualFeeAmortizedCents).toBe(792)
+    }
+  })
+
+  it('VGD-06: expired scenario returns UnresolvedOutcome', () => {
+    const outcome = calculate(
+      makeContext({ transactionDate: '2024-06-15', merchantCategory: 'dining' }),
+      [makeVariableRule('r1', { categories: ['dining'], pointsPerDollar: 2 })],
+      [makeScenario('s1', { effectiveTo: '2023-12-31', centsPerPoint: 1.5 })]
+    )
+    expect(outcome.resolved).toBe(false)
+  })
+
+  it('VGD-07: variable rule not yet effective; no match; resolved with 0 points', () => {
+    const outcome = calculate(
+      makeContext({ transactionDate: '2024-01-01' }),
+      [makeVariableRule('r1', { effectiveFrom: '2024-06-01', pointsPerDollar: 3 })],
+      [makeScenario('s1')]
+    )
+    expect(outcome.resolved).toBe(true)
+    expect(outcome.rewardsEarned).toBe(0)
+    expect(outcome.ruleApplied).toBeNull()
+  })
+})
+
+// --- scenario selection ---
+
+describe('scenario selection', () => {
+  it('category-specific scenario beats general when both effective', () => {
+    const outcome = calculate(
+      makeContext({ amount: 10000, merchantCategory: 'travel' }),
+      [makeVariableRule('r1', { pointsPerDollar: 1 })],
+      [
+        makeScenario('general', { applicableCategories: [], centsPerPoint: 1.0 }),
+        makeScenario('specific', { applicableCategories: ['travel'], centsPerPoint: 2.0 }),
+      ]
+    )
+    expect(outcome.resolved).toBe(true)
+    if (outcome.resolved) {
+      expect(outcome.scenarioApplied).toBe('specific')
+      expect(outcome.netReturnCents).toBe(200)
+    }
+  })
+
+  it('highest centsPerPoint wins among same-specificity scenarios', () => {
+    const outcome = calculate(
+      makeContext({ amount: 10000, merchantCategory: 'dining' }),
+      [makeVariableRule('r1', { pointsPerDollar: 1 })],
+      [
+        makeScenario('low', { centsPerPoint: 1.0 }),
+        makeScenario('high', { centsPerPoint: 1.5 }),
+      ]
+    )
+    expect(outcome.resolved).toBe(true)
+    if (outcome.resolved) {
+      expect(outcome.scenarioApplied).toBe('high')
+    }
+  })
+
+  it('category-specific scenario for wrong category falls back to general', () => {
+    const outcome = calculate(
+      makeContext({ amount: 10000, merchantCategory: 'groceries' }),
+      [makeVariableRule('r1', { pointsPerDollar: 1 })],
+      [
+        makeScenario('travel-specific', { applicableCategories: ['travel'], centsPerPoint: 3.0 }),
+        makeScenario('general', { applicableCategories: [], centsPerPoint: 1.0 }),
+      ]
+    )
+    expect(outcome.resolved).toBe(true)
+    if (outcome.resolved) {
+      expect(outcome.scenarioApplied).toBe('general')
+    }
+  })
+
+  it('only category-specific scenarios with no general → UnresolvedOutcome when category unmatched', () => {
+    const outcome = calculate(
+      makeContext({ merchantCategory: 'groceries' }),
+      [makeVariableRule('r1', { pointsPerDollar: 1 })],
+      [makeScenario('travel-only', { applicableCategories: ['travel'], centsPerPoint: 2.0 })]
+    )
+    expect(outcome.resolved).toBe(false)
+  })
+
+  it('effectiveTo boundary date is inclusive', () => {
+    const outcome = calculate(
+      makeContext({ transactionDate: '2024-12-31' }),
+      [makeVariableRule('r1', { pointsPerDollar: 1 })],
+      [makeScenario('s1', { effectiveTo: '2024-12-31', centsPerPoint: 1.0 })]
+    )
+    expect(outcome.resolved).toBe(true)
+  })
+})
+
+// --- net return and fee amortization ---
+
+describe('net return and fee amortization', () => {
+  it('null annualFeeCents gives null annualFeeAmortizedCents', () => {
+    const outcome = calculate(
+      makeContext({ amount: 10000, merchantCategory: 'dining' }),
+      [makeVariableRule('r1', { categories: ['dining'], pointsPerDollar: 1 })],
+      [makeScenario('s1', { centsPerPoint: 1.5, annualFeeCents: null })]
+    )
+    expect(outcome.resolved).toBe(true)
+    if (outcome.resolved) {
+      expect(outcome.annualFeeAmortizedCents).toBeNull()
+    }
+  })
+
+  it('direct rules yield null netReturnCents and null annualFeeAmortizedCents', () => {
+    const outcome = calculate(
+      makeContext({ amount: 10000, merchantCategory: 'dining' }),
+      [makeRule('r1', { categories: ['dining'], pointsPerDollar: 3 })]
+    )
+    expect(outcome.resolved).toBe(true)
+    if (outcome.resolved) {
+      expect(outcome.netReturnCents).toBeNull()
+      expect(outcome.annualFeeAmortizedCents).toBeNull()
+    }
+  })
+})
+
+// --- mixed rule sets ---
+
+describe('mixed rule sets', () => {
+  it('direct rule wins best-points selection; no scenario needed', () => {
+    // direct rule: 400 points; variable rule: 100 points — direct wins
+    const outcome = calculate(
+      makeContext({ amount: 10000, merchantCategory: 'dining' }),
+      [
+        makeRule('direct', { categories: ['dining'], pointsPerDollar: 4 }),
+        makeVariableRule('variable', { categories: ['dining'], pointsPerDollar: 1 }),
+      ],
+      [] // no scenarios
+    )
+    expect(outcome.resolved).toBe(true)
+    if (outcome.resolved) {
+      expect(outcome.ruleApplied).toBe('direct')
+      expect(outcome.rewardsEarned).toBe(400)
+    }
+  })
+
+  it('variable rule wins best-points selection; UnresolvedOutcome when no scenario even with direct also matched', () => {
+    // variable: 500 points; direct: 100 points — variable wins, no scenario → unresolved
+    const outcome = calculate(
+      makeContext({ amount: 10000, merchantCategory: 'dining' }),
+      [
+        makeVariableRule('variable', { categories: ['dining'], pointsPerDollar: 5 }),
+        makeRule('direct', { categories: ['dining'], pointsPerDollar: 1 }),
+      ],
+      [] // no scenarios
+    )
+    expect(outcome.resolved).toBe(false)
+    if (!outcome.resolved) {
+      expect(outcome.ruleApplied).toBe('variable')
+    }
+  })
+})
 describe('determinism', () => {
   it('same inputs always produce identical output', () => {
     const ctx = makeContext({ amount: 7777, merchantCategory: 'travel' })
