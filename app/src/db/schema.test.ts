@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import {
   evidenceStatusEnum,
+  dataLeadStatusEnum,
   sources,
   verificationRecords,
   cards,
   ruleVersions,
   redemptionScenarios,
+  dataLeads,
 } from './schema'
 
 describe('evidenceStatusEnum', () => {
@@ -62,5 +64,55 @@ describe('all domain tables exported', () => {
     expect(cards).toBeDefined()
     expect(ruleVersions).toBeDefined()
     expect(redemptionScenarios).toBeDefined()
+  })
+})
+
+describe('dataLeadStatusEnum', () => {
+  it('has exactly the three constrained values', () => {
+    expect([...dataLeadStatusEnum.enumValues]).toEqual(['pending', 'approved', 'rejected'])
+  })
+})
+
+describe('dataLeads columns', () => {
+  it('status defaults to pending', () => {
+    type Insert = typeof dataLeads.$inferInsert
+    const row: Insert = {
+      cardId: 'card-uuid',
+      proposedRuleData: {},
+      sourceUrl: 'https://example.com',
+    }
+    expect(row.status).toBeUndefined()
+  })
+
+  it('verification_record_id is optional', () => {
+    type Insert = typeof dataLeads.$inferInsert
+    const row: Insert = {
+      cardId: 'card-uuid',
+      proposedRuleData: {},
+      sourceUrl: 'https://example.com',
+    }
+    expect(row.verificationRecordId).toBeUndefined()
+  })
+
+  it('rejection_reason is optional', () => {
+    type Insert = typeof dataLeads.$inferInsert
+    const row: Insert = {
+      cardId: 'card-uuid',
+      proposedRuleData: {},
+      sourceUrl: 'https://example.com',
+    }
+    expect(row.rejectionReason).toBeUndefined()
+  })
+
+  it('has card_id, proposed_rule_data, source_url columns', () => {
+    expect(dataLeads.cardId).toBeDefined()
+    expect(dataLeads.proposedRuleData).toBeDefined()
+    expect(dataLeads.sourceUrl).toBeDefined()
+  })
+})
+
+describe('domain tables include dataLeads', () => {
+  it('exports six domain tables total', () => {
+    expect(dataLeads).toBeDefined()
   })
 })

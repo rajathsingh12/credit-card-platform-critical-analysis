@@ -1,5 +1,11 @@
 import { pgEnum, pgTable, uuid, text, timestamp, date, jsonb } from 'drizzle-orm/pg-core'
 
+export const dataLeadStatusEnum = pgEnum('data_lead_status', [
+  'pending',
+  'approved',
+  'rejected',
+])
+
 export const evidenceStatusEnum = pgEnum('evidence_status', [
   'officially-documented',
   'statement-verified',
@@ -48,4 +54,16 @@ export const redemptionScenarios = pgTable('redemption_scenarios', {
   name: text('name').notNull(),
   description: text('description'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+export const dataLeads = pgTable('data_leads', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  cardId: uuid('card_id').notNull().references(() => cards.id),
+  proposedRuleData: jsonb('proposed_rule_data').notNull(),
+  sourceUrl: text('source_url').notNull(),
+  status: dataLeadStatusEnum('status').notNull().default('pending'),
+  verificationRecordId: uuid('verification_record_id').references(() => verificationRecords.id),
+  rejectionReason: text('rejection_reason'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
