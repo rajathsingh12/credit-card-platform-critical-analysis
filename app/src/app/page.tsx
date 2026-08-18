@@ -141,6 +141,7 @@ export default function Home() {
 
   return (
     <main style={s.page}>
+      <style>{`@media (max-width: 500px) { .form-row { grid-template-columns: 1fr !important; } }`}</style>
       <h1 style={s.heading}>Credit Card Intelligence Platform</h1>
       <p style={s.sub}>Enter a transaction to see rewards earned — no login required.</p>
 
@@ -155,7 +156,7 @@ export default function Home() {
           </select>
         </div>
 
-        <div style={s.row}>
+        <div style={s.row} className="form-row">
           <div style={s.field}>
             <label style={s.label} htmlFor="amount">Amount (₹)</label>
             <input id="amount" type="number" min="1" step="0.01" style={s.input} value={amountRupees}
@@ -174,7 +175,7 @@ export default function Home() {
             onChange={e => setMerchantName(e.target.value)} placeholder="e.g. Swiggy" />
         </div>
 
-        <div style={s.row}>
+        <div style={s.row} className="form-row">
           <div style={s.field}>
             <label style={s.label} htmlFor="category">Merchant category</label>
             <select id="category" style={s.input} value={merchantCategory} onChange={e => setMerchantCategory(e.target.value)} required>
