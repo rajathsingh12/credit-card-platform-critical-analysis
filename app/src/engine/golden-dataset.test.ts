@@ -1,450 +1,271 @@
-/**
- * Golden dataset test suite.
- * Validates calculation engine against seeded cards with known outcomes.
- * Zero Critical Calculation Errors required for Phase 1 exit.
- */
-
-import { describe, it, expect, beforeAll } from 'vitest'
-import { db } from '../db/client'
-import { cards, ruleVersions, redemptionScenarios } from '../db/schema'
+import { describe, it, expect } from 'vitest'
 import { calculate } from './calculate'
-import type { TransactionContext, RuleVersion, RedemptionScenario } from './types'
-import { eq } from 'drizzle-orm'
+import type { TransactionContext, TransactionOutcome, UnresolvedOutcome } from './types'
+import {
+  VERIFIED_CARD_SET,
+  findSeedCard,
+  toRuleVersion,
+  toRedemptionScenarios,
+  cardKey,
+  SEED_EFFECTIVE_FROM,
+  type SeedCard,
+} from '../catalog/verified-card-set'
 
-describe('Golden Dataset — Calculation Validation', () => {
-  let hdfc_regalia_id: string
-  let axis_magnus_id: string
-  let icici_amazon_id: string
-  let sbi_simplyclick_id: string
-  let amex_platinum_travel_id: string
+const TXN_DATE = '2026-08-18'
 
-  beforeAll(async () => {
-    // Fetch card IDs for test cases
-    const hdfc_regalia = await db.select().from(cards).where(eq(cards.name, 'HDFC Regalia')).limit(1)
-    const axis_magnus = await db.select().from(cards).where(eq(cards.name, 'Axis Magnus')).limit(1)
-    const icici_amazon = await db.select().from(cards).where(eq(cards.name, 'ICICI Amazon Pay')).limit(1)
-    const sbi_click = await db.select().from(cards).where(eq(cards.name, 'SBI SimplyCLICK')).limit(1)
-    const amex_plat = await db.select().from(cards).where(eq(cards.name, 'American Express Platinum Travel')).limit(1)
+function txn(overrides: Partial<TransactionContext> = {}): TransactionContext {
+  return {
+    transactionId: 'txn-1',
+    amount: 100_000,
+    merchantCategory: 'dining',
+    merchantName: 'Test Merchant',
+    transactionDate: TXN_DATE,
+    ...overrides,
+  }
+}
 
-    hdfc_regalia_id = hdfc_regalia[0]?.id
-    axis_magnus_id = axis_magnus[0]?.id
-    icici_amazon_id = icici_amazon[0]?.id
-    sbi_simplyclick_id = sbi_click[0]?.id
-    amex_platinum_travel_id = amex_plat[0]?.id
+function run(spec: SeedCard, context: TransactionContext) {
+  return calculate(context, [toRuleVersion(spec)], toRedemptionScenarios(spec))
+}
 
-    expect(hdfc_regalia_id).toBeDefined()
-    expect(axis_magnus_id).toBeDefined()
-    expect(icici_amazon_id).toBeDefined()
-    expect(sbi_simplyclick_id).toBeDefined()
-    expect(amex_platinum_travel_id).toBeDefined()
+describe('golden dataset: cash-back cards', () => {
+  it('pays 1% on HDFC Bank Millennia for a Rs 2,500 dining spend', () => {
+    const spec = findSeedCard('HDFC Bank', 'Millennia')
+    const result = run(spec, txn({ amount: 250_000, merchantCategory: 'dining' }))
+
+    expect(result.resolved).toBe(true)
+    const outcome = result as TransactionOutcome
+    expect(outcome.rewardsEarned).toBe(2_500)
+    expect(outcome.ruleApplied).toBe(`rv::${cardKey(spec)}`)
+    expect(outcome.scenarioApplied).toBeNull()
+    expect(outcome.netReturnCents).toBeNull()
+    expect(outcome.annualFeeAmortizedCents).toBeNull()
   })
 
-  describe('Direct Reward Cards', () => {
-    it('HDFC Regalia — base rate on dining', async () => {
-      const rules = await db
-        .select()
-        .from(ruleVersions)
-        .where(eq(ruleVersions.cardId, hdfc_regalia_id))
+  it('pays 1.5% on Axis Bank ACE for a Rs 4,000 grocery spend', () => {
+    const spec = findSeedCard('Axis Bank', 'ACE')
+    const result = run(spec, txn({ amount: 400_000, merchantCategory: 'grocery' }))
 
-      const ruleVersionsTyped: RuleVersion[] = rules.map(r => ({
-        id: r.id,
-        cardId: r.cardId,
-        effectiveFrom: r.effectiveFrom,
-        effectiveTo: r.effectiveTo,
-        ruleData: r.ruleData as any,
-      }))
-
-      const context: TransactionContext = {
-        transactionId: 'txn-001',
-        amount: 10000, // ₹100
-        merchantCategory: 'dining',
-        merchantName: 'Cafe Coffee Day',
-        transactionDate: '2025-06-15',
-      }
-
-      const result = calculate(context, ruleVersionsTyped)
-
-      expect(result.resolved).toBe(true)
-      if (result.resolved) {
-        // 4 points per dollar × 100 cents / 100 = 4 points
-        expect(result.rewardsEarned).toBe(400)
-        expect(result.ruleApplied).toBe(ruleVersionsTyped[0].id)
-      }
-    })
-
-    it('HDFC Regalia — exclusion on fuel', async () => {
-      const rules = await db
-        .select()
-        .from(ruleVersions)
-        .where(eq(ruleVersions.cardId, hdfc_regalia_id))
-
-      const ruleVersionsTyped: RuleVersion[] = rules.map(r => ({
-        id: r.id,
-        cardId: r.cardId,
-        effectiveFrom: r.effectiveFrom,
-        effectiveTo: r.effectiveTo,
-        ruleData: r.ruleData as any,
-      }))
-
-      const context: TransactionContext = {
-        transactionId: 'txn-002',
-        amount: 5000,
-        merchantCategory: 'fuel',
-        merchantName: 'Indian Oil',
-        transactionDate: '2025-06-15',
-      }
-
-      const result = calculate(context, ruleVersionsTyped)
-
-      expect(result.resolved).toBe(true)
-      if (result.resolved) {
-        expect(result.rewardsEarned).toBe(0)
-        expect(result.ruleApplied).toBe(null)
-      }
-    })
-
-    it('ICICI Amazon Pay — bonus on online', async () => {
-      const rules = await db
-        .select()
-        .from(ruleVersions)
-        .where(eq(ruleVersions.cardId, icici_amazon_id))
-
-      const ruleVersionsTyped: RuleVersion[] = rules.map(r => ({
-        id: r.id,
-        cardId: r.cardId,
-        effectiveFrom: r.effectiveFrom,
-        effectiveTo: r.effectiveTo,
-        ruleData: r.ruleData as any,
-      }))
-
-      const context: TransactionContext = {
-        transactionId: 'txn-003',
-        amount: 20000, // ₹200
-        merchantCategory: 'online',
-        merchantName: 'Amazon.in',
-        transactionDate: '2025-06-15',
-      }
-
-      const result = calculate(context, ruleVersionsTyped)
-
-      expect(result.resolved).toBe(true)
-      if (result.resolved) {
-        // 5 points per dollar × 200 cents / 100 = 1000 points
-        expect(result.rewardsEarned).toBe(1000)
-      }
-    })
-
-    it('SBI SimplyCLICK — cap enforcement', async () => {
-      const rules = await db
-        .select()
-        .from(ruleVersions)
-        .where(eq(ruleVersions.cardId, sbi_simplyclick_id))
-
-      const ruleVersionsTyped: RuleVersion[] = rules.map(r => ({
-        id: r.id,
-        cardId: r.cardId,
-        effectiveFrom: r.effectiveFrom,
-        effectiveTo: r.effectiveTo,
-        ruleData: r.ruleData as any,
-      }))
-
-      const context: TransactionContext = {
-        transactionId: 'txn-004',
-        amount: 50000, // ₹500
-        merchantCategory: 'online',
-        merchantName: 'Flipkart',
-        transactionDate: '2025-06-15',
-      }
-
-      const result = calculate(context, ruleVersionsTyped)
-
-      expect(result.resolved).toBe(true)
-      if (result.resolved) {
-        // Uncapped: 10 × 500 / 100 = 5000, but cap is 1000
-        expect(result.rewardsEarned).toBe(1000)
-        const trace = result.trace.entries.find(e => e.applied)
-        expect(trace?.assumptions).toContain('points capped at 1000 (uncapped value was 5000)')
-      }
-    })
+    expect((result as TransactionOutcome).rewardsEarned).toBe(6_000)
   })
 
-  describe('Variable Reward Cards', () => {
-    it('Axis Magnus — variable reward with redemption scenario', async () => {
-      const rules = await db
-        .select()
-        .from(ruleVersions)
-        .where(eq(ruleVersions.cardId, axis_magnus_id))
+  it('pays nothing on an excluded category', () => {
+    const spec = findSeedCard('HDFC Bank', 'Millennia')
+    const result = run(spec, txn({ amount: 300_000, merchantCategory: 'fuel' }))
 
-      const scenarios = await db
-        .select()
-        .from(redemptionScenarios)
-        .where(eq(redemptionScenarios.cardId, axis_magnus_id))
-
-      const ruleVersionsTyped: RuleVersion[] = rules.map(r => ({
-        id: r.id,
-        cardId: r.cardId,
-        effectiveFrom: r.effectiveFrom,
-        effectiveTo: r.effectiveTo,
-        ruleData: r.ruleData as any,
-      }))
-
-      const scenariosTyped: RedemptionScenario[] = scenarios.map(s => ({
-        id: s.id,
-        cardId: s.cardId,
-        redemptionType: s.name,
-        applicableCategories: [],
-        effectiveFrom: '2025-01-01',
-        effectiveTo: null,
-        centsPerPoint: 1.0,
-        annualFeeCents: 1000000,
-      }))
-
-      const context: TransactionContext = {
-        transactionId: 'txn-005',
-        amount: 10000, // ₹100
-        merchantCategory: 'dining',
-        merchantName: 'Restaurant',
-        transactionDate: '2025-06-15',
-      }
-
-      const result = calculate(context, ruleVersionsTyped, scenariosTyped)
-
-      expect(result.resolved).toBe(true)
-      if (result.resolved) {
-        // 12 points per dollar × 100 / 100 = 1200 points
-        expect(result.rewardsEarned).toBe(1200)
-        expect(result.scenarioApplied).toBe(scenariosTyped[0].id)
-        // 1200 points × 1.0 cents/point = 1200 cents
-        // Annual fee amortized: 1000000 / 12 = 83333 cents/month
-        // Net: 1200 - 83333 = -82133
-        expect(result.netReturnCents).toBe(1200 - Math.round(1000000 / 12))
-      }
-    })
-
-    it('American Express Platinum Travel — variable with membership rewards', async () => {
-      const rules = await db
-        .select()
-        .from(ruleVersions)
-        .where(eq(ruleVersions.cardId, amex_platinum_travel_id))
-
-      const scenarios = await db
-        .select()
-        .from(redemptionScenarios)
-        .where(eq(redemptionScenarios.cardId, amex_platinum_travel_id))
-
-      const ruleVersionsTyped: RuleVersion[] = rules.map(r => ({
-        id: r.id,
-        cardId: r.cardId,
-        effectiveFrom: r.effectiveFrom,
-        effectiveTo: r.effectiveTo,
-        ruleData: r.ruleData as any,
-      }))
-
-      const scenariosTyped: RedemptionScenario[] = scenarios.map(s => ({
-        id: s.id,
-        cardId: s.cardId,
-        redemptionType: s.name,
-        applicableCategories: [],
-        effectiveFrom: '2025-01-01',
-        effectiveTo: null,
-        centsPerPoint: 0.5,
-        annualFeeCents: 350000,
-      }))
-
-      const context: TransactionContext = {
-        transactionId: 'txn-006',
-        amount: 100000, // ₹1000
-        merchantCategory: 'travel',
-        merchantName: 'Make My Trip',
-        transactionDate: '2025-06-15',
-      }
-
-      const result = calculate(context, ruleVersionsTyped, scenariosTyped)
-
-      expect(result.resolved).toBe(true)
-      if (result.resolved) {
-        // 1 point per dollar × 1000 / 100 = 1000 points
-        expect(result.rewardsEarned).toBe(1000)
-        expect(result.scenarioApplied).toBe(scenariosTyped[0].id)
-        // 1000 points × 0.5 cents = 500 cents
-        // Fee: 350000 / 12 = 29166.67 → 29167
-        expect(result.netReturnCents).toBe(500 - Math.round(350000 / 12))
-      }
-    })
+    const outcome = result as TransactionOutcome
+    expect(outcome.rewardsEarned).toBe(0)
+    expect(outcome.ruleApplied).toBeNull()
+    expect(outcome.trace.entries[0].reason).toContain('excluded')
   })
 
-  describe('Edge Cases', () => {
-    it('Zero amount transaction', async () => {
-      const rules = await db
-        .select()
-        .from(ruleVersions)
-        .where(eq(ruleVersions.cardId, hdfc_regalia_id))
+  it('applies the rule to a zero-value transaction and earns nothing', () => {
+    const spec = findSeedCard('HDFC Bank', 'Millennia')
+    const outcome = run(spec, txn({ amount: 0 })) as TransactionOutcome
 
-      const ruleVersionsTyped: RuleVersion[] = rules.map(r => ({
-        id: r.id,
-        cardId: r.cardId,
-        effectiveFrom: r.effectiveFrom,
-        effectiveTo: r.effectiveTo,
-        ruleData: r.ruleData as any,
-      }))
-
-      const context: TransactionContext = {
-        transactionId: 'txn-007',
-        amount: 0,
-        merchantCategory: 'dining',
-        merchantName: 'Free Sample',
-        transactionDate: '2025-06-15',
-      }
-
-      const result = calculate(context, ruleVersionsTyped)
-
-      expect(result.resolved).toBe(true)
-      if (result.resolved) {
-        expect(result.rewardsEarned).toBe(0)
-      }
-    })
-
-    it('Transaction before effective date', async () => {
-      const rules = await db
-        .select()
-        .from(ruleVersions)
-        .where(eq(ruleVersions.cardId, hdfc_regalia_id))
-
-      const ruleVersionsTyped: RuleVersion[] = rules.map(r => ({
-        id: r.id,
-        cardId: r.cardId,
-        effectiveFrom: r.effectiveFrom,
-        effectiveTo: r.effectiveTo,
-        ruleData: r.ruleData as any,
-      }))
-
-      const context: TransactionContext = {
-        transactionId: 'txn-008',
-        amount: 10000,
-        merchantCategory: 'dining',
-        merchantName: 'Restaurant',
-        transactionDate: '2024-01-01', // Before 2025-01-01
-      }
-
-      const result = calculate(context, ruleVersionsTyped)
-
-      expect(result.resolved).toBe(true)
-      if (result.resolved) {
-        expect(result.rewardsEarned).toBe(0)
-        expect(result.ruleApplied).toBe(null)
-      }
-    })
-
-    it('Fractional points floor correctly', async () => {
-      const rules = await db
-        .select()
-        .from(ruleVersions)
-        .where(eq(ruleVersions.cardId, hdfc_regalia_id))
-
-      const ruleVersionsTyped: RuleVersion[] = rules.map(r => ({
-        id: r.id,
-        cardId: r.cardId,
-        effectiveFrom: r.effectiveFrom,
-        effectiveTo: r.effectiveTo,
-        ruleData: r.ruleData as any,
-      }))
-
-      const context: TransactionContext = {
-        transactionId: 'txn-009',
-        amount: 123, // ₹1.23 — odd amount
-        merchantCategory: 'dining',
-        merchantName: 'Cafe',
-        transactionDate: '2025-06-15',
-      }
-
-      const result = calculate(context, ruleVersionsTyped)
-
-      expect(result.resolved).toBe(true)
-      if (result.resolved) {
-        // 4 points/dollar × 123 cents / 100 = 4.92 → floor to 4
-        expect(result.rewardsEarned).toBe(4)
-      }
-    })
+    expect(outcome.rewardsEarned).toBe(0)
+    expect(outcome.ruleApplied).toBe(`rv::${cardKey(spec)}`)
   })
 
-  describe('Critical Calculation Error Detection', () => {
-    it('All seeded cards have at least one rule version', async () => {
-      const allCards = await db.select().from(cards)
+  it('earns nothing before the rule takes effect', () => {
+    const spec = findSeedCard('HDFC Bank', 'Millennia')
+    const outcome = run(
+      spec,
+      txn({ amount: 250_000, transactionDate: '2024-12-31' })
+    ) as TransactionOutcome
 
-      for (const card of allCards) {
-        const rules = await db
-          .select()
-          .from(ruleVersions)
-          .where(eq(ruleVersions.cardId, card.id))
+    expect(outcome.rewardsEarned).toBe(0)
+    expect(outcome.ruleApplied).toBeNull()
+  })
+})
 
-        expect(
-          rules.length,
-          `Card ${card.name} (${card.issuer}) has no rule versions`
-        ).toBeGreaterThan(0)
-      }
-    })
+describe('golden dataset: caps', () => {
+  it('caps HDFC Bank MoneyBack+ at 2,000 points and nets the fee out', () => {
+    const spec = findSeedCard('HDFC Bank', 'MoneyBack+')
+    const outcome = run(
+      spec,
+      txn({ amount: 20_000_000, merchantCategory: 'online' })
+    ) as TransactionOutcome
 
-    it('All rule versions have valid effective dates', async () => {
-      const allRules = await db.select().from(ruleVersions)
+    // 0.02 points per rupee on Rs 2,00,000 would earn 4,000 points; the cap holds it at 2,000.
+    expect(outcome.rewardsEarned).toBe(2_000)
+    expect(outcome.scenarioApplied).toBe(`rs::${cardKey(spec)}::travel-portal`)
+    expect(outcome.annualFeeAmortizedCents).toBe(4_167)
+    expect(outcome.netReturnCents).toBe(45_833)
 
-      for (const rule of allRules) {
-        expect(rule.effectiveFrom).toBeTruthy()
-        expect(new Date(rule.effectiveFrom).toString()).not.toBe('Invalid Date')
+    const applied = outcome.trace.entries.find(e => e.applied)
+    expect(applied?.pointsBeforeCap).toBe(4_000)
+    expect(applied?.pointsAfterCap).toBe(2_000)
+  })
+})
 
-        if (rule.effectiveTo) {
-          expect(new Date(rule.effectiveTo).toString()).not.toBe('Invalid Date')
-          expect(rule.effectiveTo >= rule.effectiveFrom).toBe(true)
-        }
-      }
-    })
+describe('golden dataset: redemption scenario selection', () => {
+  it('picks the travel scenario for Amex Platinum Travel and breaks even against the fee', () => {
+    const spec = findSeedCard('American Express', 'Platinum Travel Credit Card')
+    const outcome = run(
+      spec,
+      txn({ amount: 5_000_000, merchantCategory: 'travel' })
+    ) as TransactionOutcome
 
-    it('All rule_data has required fields', async () => {
-      const allRules = await db.select().from(ruleVersions)
+    expect(outcome.rewardsEarned).toBe(1_000)
+    expect(outcome.scenarioApplied).toBe(`rs::${cardKey(spec)}::membership-rewards-travel`)
+    expect(outcome.annualFeeAmortizedCents).toBe(50_000)
+    expect(outcome.netReturnCents).toBe(0)
+  })
 
-      for (const rule of allRules) {
-        const rd = rule.ruleData as any
+  it('falls back to the statement-credit scenario off travel, and reports a negative net return', () => {
+    const spec = findSeedCard('American Express', 'Platinum Travel Credit Card')
+    const outcome = run(
+      spec,
+      txn({ amount: 5_000_000, merchantCategory: 'dining' })
+    ) as TransactionOutcome
 
-        expect(rd.ruleType).toBeDefined()
-        expect(['direct', 'variable'].includes(rd.ruleType)).toBe(true)
-        expect(Array.isArray(rd.categories)).toBe(true)
-        expect(Array.isArray(rd.exclusions)).toBe(true)
-        expect(typeof rd.pointsPerDollar).toBe('number')
-        expect(rd.pointsPerDollar).toBeGreaterThan(0)
-        expect(rd.capPoints === null || typeof rd.capPoints === 'number').toBe(true)
-      }
-    })
+    expect(outcome.rewardsEarned).toBe(1_000)
+    expect(outcome.scenarioApplied).toBe(`rs::${cardKey(spec)}::membership-rewards-statement`)
+    expect(outcome.netReturnCents).toBe(-25_000)
+  })
 
-    it('Variable reward cards have redemption scenarios', async () => {
-      const variableRules = await db.select().from(ruleVersions)
+  it('reports an Unresolved Outcome when no scenario covers the transaction', () => {
+    const spec = findSeedCard('Standard Chartered', 'Ultimate')
+    const result = calculate(
+      txn({ amount: 1_000_000, merchantCategory: 'dining' }),
+      [toRuleVersion(spec)],
+      []
+    )
 
-      for (const rule of variableRules) {
-        const rd = rule.ruleData as any
+    expect(result.resolved).toBe(false)
+    const unresolved = result as UnresolvedOutcome
+    expect(unresolved.rewardsEarned).toBe(500)
+    expect(unresolved.reason).toBe('no Redemption Scenario covers this transaction')
+  })
+})
 
-        if (rd.ruleType === 'variable') {
-          const scenarios = await db
-            .select()
-            .from(redemptionScenarios)
-            .where(eq(redemptionScenarios.cardId, rule.cardId))
+const PROBE_CATEGORIES = ['dining', 'travel', 'grocery', 'online', 'entertainment']
+const PROBE_AMOUNTS = [100_000, 2_500_000]
 
-          expect(
-            scenarios.length,
-            `Variable rule ${rule.id} for card ${rule.cardId} has no redemption scenarios`
-          ).toBeGreaterThan(0)
-        }
-      }
-    })
+type Probe = { spec: SeedCard; context: TransactionContext }
 
-    it('Coverage requirements met', async () => {
-      const allCards = await db.select().from(cards)
+const PROBES: Probe[] = VERIFIED_CARD_SET.flatMap(spec =>
+  PROBE_CATEGORIES.flatMap(merchantCategory =>
+    PROBE_AMOUNTS.map(amount => ({
+      spec,
+      context: txn({
+        transactionId: `${cardKey(spec)}|${merchantCategory}|${amount}`,
+        amount,
+        merchantCategory,
+      }),
+    }))
+  )
+)
 
-      const issuers = new Set(allCards.map(c => c.issuer))
-      expect(issuers.size, 'Must cover at least 5 issuers').toBeGreaterThanOrEqual(5)
+function label(probe: Probe): string {
+  return `${probe.spec.issuer} ${probe.spec.name} @ ${probe.context.merchantCategory} ${probe.context.amount}`
+}
 
-      const networks = new Set(allCards.map(c => c.network))
-      expect(networks.size, 'Must cover at least 3 networks').toBeGreaterThanOrEqual(3)
+describe('Critical Calculation Errors across the Verified Card Set', () => {
+  it('probes every card on ordinary spend', () => {
+    expect(PROBES.length).toBe(
+      VERIFIED_CARD_SET.length * PROBE_CATEGORIES.length * PROBE_AMOUNTS.length
+    )
+  })
 
-      expect(allCards.length, 'Must seed at least 30 cards').toBeGreaterThanOrEqual(30)
-      expect(allCards.length, 'Must seed at most 40 cards').toBeLessThanOrEqual(40)
-    })
+  it('never leaves ordinary spend unresolved', () => {
+    const unresolved = PROBES.filter(p => !run(p.spec, p.context).resolved).map(label)
+    expect(unresolved).toEqual([])
+  })
+
+  it('always applies the published rule to non-excluded spend', () => {
+    const unapplied = PROBES.filter(p => {
+      const result = run(p.spec, p.context) as TransactionOutcome
+      return result.ruleApplied === null
+    }).map(label)
+    expect(unapplied).toEqual([])
+  })
+
+  it('earns a whole, non-negative number of points everywhere', () => {
+    const bad = PROBES.filter(p => {
+      const { rewardsEarned } = run(p.spec, p.context)
+      return !Number.isInteger(rewardsEarned) || rewardsEarned < 0
+    }).map(label)
+    expect(bad).toEqual([])
+  })
+
+  it('never earns more than the declared cap', () => {
+    const overCap = PROBES.filter(p => {
+      const cap = p.spec.ruleData.capPoints
+      if (cap === null) return false
+      return run(p.spec, p.context).rewardsEarned > cap
+    }).map(label)
+    expect(overCap).toEqual([])
+  })
+
+  it('amortizes each annual fee as one twelfth of the fee stated on the card', () => {
+    const wrong = PROBES.filter(p => {
+      const result = run(p.spec, p.context) as TransactionOutcome
+      if (result.annualFeeAmortizedCents === null) return p.spec.annualFeeCents !== null && result.scenarioApplied !== null
+      const expected = Math.round((p.spec.annualFeeCents ?? 0) / 12)
+      return result.annualFeeAmortizedCents !== expected
+    }).map(label)
+    expect(wrong).toEqual([])
+  })
+
+  it('states a net return in whole minor units wherever it states one at all', () => {
+    const bad = PROBES.filter(p => {
+      const result = run(p.spec, p.context) as TransactionOutcome
+      return result.netReturnCents !== null && !Number.isInteger(result.netReturnCents)
+    }).map(label)
+    expect(bad).toEqual([])
+  })
+
+  it('cites a redemption scenario for every variable-reward outcome', () => {
+    const uncited = PROBES.filter(p => {
+      if (p.spec.ruleData.ruleType !== 'variable') return false
+      const result = run(p.spec, p.context) as TransactionOutcome
+      return result.scenarioApplied === null
+    }).map(label)
+    expect(uncited).toEqual([])
+  })
+
+  it('records a trace entry for the published rule on every probe', () => {
+    const untraced = PROBES.filter(p => run(p.spec, p.context).trace.entries.length === 0).map(label)
+    expect(untraced).toEqual([])
+  })
+
+  it('discloses the base-rate assumption on every applied rule', () => {
+    const undisclosed = PROBES.filter(p => {
+      const applied = run(p.spec, p.context).trace.entries.find(e => e.applied)
+      return !applied?.assumptions.some(a => a.includes('base earn rate applies'))
+    }).map(label)
+    expect(undisclosed).toEqual([])
+  })
+})
+
+describe('excluded spend across the Verified Card Set', () => {
+  it('earns nothing and applies no rule on every declared exclusion', () => {
+    const violations = VERIFIED_CARD_SET.flatMap(spec =>
+      spec.ruleData.exclusions.map(category => {
+        const result = run(spec, txn({ amount: 500_000, merchantCategory: category }))
+        const ok = result.resolved && result.rewardsEarned === 0 && result.ruleApplied === null
+        return ok ? null : `${spec.issuer} ${spec.name} @ ${category}`
+      })
+    ).filter(Boolean)
+    expect(violations).toEqual([])
+  })
+})
+
+describe('published rule effectivity', () => {
+  it('is effective on the probe date for every card', () => {
+    const notEffective = VERIFIED_CARD_SET.filter(spec => {
+      const rule = toRuleVersion(spec)
+      return !(rule.effectiveFrom <= TXN_DATE && rule.effectiveTo === null)
+    }).map(spec => `${spec.issuer} ${spec.name}`)
+    expect(notEffective).toEqual([])
+  })
+
+  it('starts on the seeded effective date', () => {
+    const wrongStart = VERIFIED_CARD_SET.filter(
+      spec => toRuleVersion(spec).effectiveFrom !== SEED_EFFECTIVE_FROM
+    ).map(spec => `${spec.issuer} ${spec.name}`)
+    expect(wrongStart).toEqual([])
   })
 })

@@ -116,3 +116,43 @@ describe('domain tables include dataLeads', () => {
     expect(dataLeads).toBeDefined()
   })
 })
+
+describe('cards columns', () => {
+  it('records the reward currency and annual fee', () => {
+    expect(cards.rewardCurrency).toBeDefined()
+    expect(cards.annualFeeCents).toBeDefined()
+  })
+
+  it('requires a reward currency but not an annual fee', () => {
+    type Insert = typeof cards.$inferInsert
+    const row: Insert = {
+      name: 'Test',
+      issuer: 'Test Bank',
+      network: 'Visa',
+      rewardCurrency: 'cash-back',
+    }
+    expect(row.annualFeeCents).toBeUndefined()
+  })
+})
+
+describe('redemptionScenarios columns', () => {
+  it('carries everything the engine needs to value a point', () => {
+    expect(redemptionScenarios.redemptionType).toBeDefined()
+    expect(redemptionScenarios.applicableCategories).toBeDefined()
+    expect(redemptionScenarios.centsPerPoint).toBeDefined()
+    expect(redemptionScenarios.effectiveFrom).toBeDefined()
+    expect(redemptionScenarios.effectiveTo).toBeDefined()
+  })
+
+  it('leaves effective_to optional so a scenario can stay open-ended', () => {
+    type Insert = typeof redemptionScenarios.$inferInsert
+    const row: Insert = {
+      cardId: 'card-uuid',
+      name: 'Travel portal',
+      redemptionType: 'travel-portal',
+      centsPerPoint: '50',
+      effectiveFrom: '2025-01-01',
+    }
+    expect(row.effectiveTo).toBeUndefined()
+  })
+})

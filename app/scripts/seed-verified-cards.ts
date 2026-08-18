@@ -1,682 +1,268 @@
 #!/usr/bin/env tsx
 /**
- * Seed 30-40 verified cards covering:
- * - At least 5 issuers
- * - 3 reward currencies (direct points, airline miles, cash-back)
- * - 3 fee bands (no fee, mid-tier, premium)
+ * Seeds the Verified Card Set in two steps, because a Data Lead is not platform knowledge
+ * until a Data Steward approves it:
  *
- * Every card gets at least one published Rule Version with:
- * - effective_from date
- * - Verification Record with appropriate evidence_status
+ *   npm run seed             prepares cards, sources, verification records, and pending leads
+ *   npm run seed -- --approve  walks the pending leads through the Publication Gate
+ *
+ * The approve step calls the same publishLead used by the admin approval route, so the seed
+ * cannot publish anything a steward could not publish by hand.
  */
 
-import { db } from '../src/db/client'
-import { cards, sources, verificationRecords, ruleVersions, redemptionScenarios } from '../src/db/schema'
-import type { DirectRewardRuleData, VariableRewardRuleData } from '../src/engine/types'
+import { Pool, type PoolClient } from 'pg'
+import {
+  ALL_SEED_CARDS,
+  SEED_VERIFIED_AT,
+  SEED_EFFECTIVE_FROM,
+  type SeedCard,
+} from '../src/catalog/verified-card-set'
+import { classifyFeeBand, validateEvidence } from '../src/catalog/evidence'
+import { publishLead } from '../src/admin/publish'
 
-const SEED_DATE = '2025-01-01'
+const approve = process.argv.includes('--approve')
 
-type CardSpec = {
-  name: string
-  issuer: string
-  network: string
-  ruleData: DirectRewardRuleData | VariableRewardRuleData
-  evidenceStatus: 'officially-documented' | 'statement-verified' | 'inferred' | 'community-reported'
-  sourceUrl: string
-  redemption?: {
-    type: string
-    applicableCategories: string[]
-    centsPerPoint: number
-    annualFeeCents: number | null
-  }
+async function upsertCard(client: PoolClient, spec: SeedCard): Promise<string> {
+  const res = await client.query(
+    `INSERT INTO cards (name, issuer, network, reward_currency, annual_fee_cents)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (issuer, name) DO UPDATE
+       SET network = EXCLUDED.network,
+           reward_currency = EXCLUDED.reward_currency,
+           annual_fee_cents = EXCLUDED.annual_fee_cents,
+           updated_at = NOW()
+     RETURNING id`,
+    [spec.name, spec.issuer, spec.network, spec.rewardCurrency, spec.annualFeeCents]
+  )
+  return res.rows[0].id as string
 }
 
-const cardSpecs: CardSpec[] = [
-  // HDFC Bank (5 cards)
-  {
-    name: 'HDFC Regalia',
-    issuer: 'HDFC Bank',
-    network: 'Visa',
-    ruleData: {
-      ruleType: 'direct',
-      categories: [],
-      exclusions: ['fuel', 'wallet-load'],
-      pointsPerDollar: 4,
-      capPoints: null,
-    },
-    evidenceStatus: 'officially-documented',
-    sourceUrl: 'https://hdfcbank.com/regalia-benefits',
-  },
-  {
-    name: 'HDFC Diners Club Black',
-    issuer: 'HDFC Bank',
-    network: 'Diners Club',
-    ruleData: {
-      ruleType: 'direct',
-      categories: [],
-      exclusions: ['fuel', 'wallet-load', 'insurance'],
-      pointsPerDollar: 3.3,
-      capPoints: null,
-    },
-    evidenceStatus: 'officially-documented',
-    sourceUrl: 'https://hdfcbank.com/diners-black',
-  },
-  {
-    name: 'HDFC Millennia',
-    issuer: 'HDFC Bank',
-    network: 'Visa',
-    ruleData: {
-      ruleType: 'direct',
-      categories: ['online', 'streaming'],
-      exclusions: ['fuel', 'wallet-load'],
-      pointsPerDollar: 5,
-      capPoints: 1000,
-    },
-    evidenceStatus: 'statement-verified',
-    sourceUrl: 'https://hdfcbank.com/millennia-tnc',
-  },
-  {
-    name: 'HDFC Infinia',
-    issuer: 'HDFC Bank',
-    network: 'Visa',
-    ruleData: {
-      ruleType: 'direct',
-      categories: [],
-      exclusions: ['fuel', 'wallet-load', 'utilities'],
-      pointsPerDollar: 3.3,
-      capPoints: null,
-    },
-    evidenceStatus: 'officially-documented',
-    sourceUrl: 'https://hdfcbank.com/infinia-rewards',
-  },
-  {
-    name: 'HDFC MoneyBack',
-    issuer: 'HDFC Bank',
-    network: 'Mastercard',
-    ruleData: {
-      ruleType: 'direct',
-      categories: ['grocery', 'dining', 'entertainment'],
-      exclusions: ['fuel', 'wallet-load'],
-      pointsPerDollar: 5,
-      capPoints: 400,
-    },
-    evidenceStatus: 'statement-verified',
-    sourceUrl: 'https://hdfcbank.com/moneyback-details',
-  },
+async function upsertSource(client: PoolClient, spec: SeedCard): Promise<string> {
+  const existing = await client.query(`SELECT id FROM sources WHERE url = $1 LIMIT 1`, [
+    spec.sourceUrl,
+  ])
+  if (existing.rows[0]) return existing.rows[0].id as string
 
-  // Axis Bank (5 cards)
-  {
-    name: 'Axis Magnus',
-    issuer: 'Axis Bank',
-    network: 'Visa',
-    ruleData: {
-      ruleType: 'variable',
-      categories: [],
-      exclusions: ['fuel', 'wallet-load', 'rent'],
-      pointsPerDollar: 12,
-      capPoints: null,
-    },
-    evidenceStatus: 'officially-documented',
-    sourceUrl: 'https://axisbank.com/magnus-features',
-    redemption: {
-      type: 'airline-miles',
-      applicableCategories: [],
-      centsPerPoint: 1.0,
-      annualFeeCents: 1000000,
-    },
-  },
-  {
-    name: 'Axis Vistara Infinite',
-    issuer: 'Axis Bank',
-    network: 'Visa',
-    ruleData: {
-      ruleType: 'variable',
-      categories: ['travel', 'dining'],
-      exclusions: ['fuel', 'wallet-load'],
-      pointsPerDollar: 10,
-      capPoints: null,
-    },
-    evidenceStatus: 'officially-documented',
-    sourceUrl: 'https://axisbank.com/vistara-infinite',
-    redemption: {
-      type: 'airline-miles',
-      applicableCategories: ['travel', 'dining'],
-      centsPerPoint: 0.8,
-      annualFeeCents: 1000000,
-    },
-  },
-  {
-    name: 'Axis Flipkart',
-    issuer: 'Axis Bank',
-    network: 'Visa',
-    ruleData: {
-      ruleType: 'direct',
-      categories: ['online'],
-      exclusions: ['fuel', 'wallet-load'],
-      pointsPerDollar: 4,
-      capPoints: 500,
-    },
-    evidenceStatus: 'statement-verified',
-    sourceUrl: 'https://axisbank.com/flipkart-card',
-  },
-  {
-    name: 'Axis Reserve',
-    issuer: 'Axis Bank',
-    network: 'Mastercard',
-    ruleData: {
-      ruleType: 'direct',
-      categories: [],
-      exclusions: ['fuel', 'wallet-load', 'utilities'],
-      pointsPerDollar: 3,
-      capPoints: null,
-    },
-    evidenceStatus: 'officially-documented',
-    sourceUrl: 'https://axisbank.com/reserve',
-  },
-  {
-    name: 'Axis ACE',
-    issuer: 'Axis Bank',
-    network: 'Visa',
-    ruleData: {
-      ruleType: 'direct',
-      categories: ['online', 'utilities'],
-      exclusions: ['wallet-load'],
-      pointsPerDollar: 5,
-      capPoints: 500,
-    },
-    evidenceStatus: 'statement-verified',
-    sourceUrl: 'https://axisbank.com/ace',
-  },
+  const res = await client.query(
+    `INSERT INTO sources (name, url) VALUES ($1, $2) RETURNING id`,
+    [spec.sourceName, spec.sourceUrl]
+  )
+  return res.rows[0].id as string
+}
 
-  // ICICI Bank (5 cards)
-  {
-    name: 'ICICI Emeralde',
-    issuer: 'ICICI Bank',
-    network: 'Visa',
-    ruleData: {
-      ruleType: 'direct',
-      categories: [],
-      exclusions: ['fuel', 'wallet-load'],
-      pointsPerDollar: 4,
-      capPoints: null,
-    },
-    evidenceStatus: 'officially-documented',
-    sourceUrl: 'https://icicibank.com/emeralde',
-  },
-  {
-    name: 'ICICI Sapphiro',
-    issuer: 'ICICI Bank',
-    network: 'Visa',
-    ruleData: {
-      ruleType: 'direct',
-      categories: [],
-      exclusions: ['fuel', 'wallet-load'],
-      pointsPerDollar: 2,
-      capPoints: null,
-    },
-    evidenceStatus: 'officially-documented',
-    sourceUrl: 'https://icicibank.com/sapphiro',
-  },
-  {
-    name: 'ICICI Amazon Pay',
-    issuer: 'ICICI Bank',
-    network: 'Visa',
-    ruleData: {
-      ruleType: 'direct',
-      categories: ['online'],
-      exclusions: ['fuel', 'wallet-load'],
-      pointsPerDollar: 5,
-      capPoints: null,
-    },
-    evidenceStatus: 'statement-verified',
-    sourceUrl: 'https://icicibank.com/amazon-pay',
-  },
-  {
-    name: 'ICICI MMT Platinum',
-    issuer: 'ICICI Bank',
-    network: 'Mastercard',
-    ruleData: {
-      ruleType: 'direct',
-      categories: ['travel'],
-      exclusions: ['fuel', 'wallet-load'],
-      pointsPerDollar: 4,
-      capPoints: null,
-    },
-    evidenceStatus: 'inferred',
-    sourceUrl: 'https://icicibank.com/mmt-platinum-tnc',
-  },
-  {
-    name: 'ICICI Platinum',
-    issuer: 'ICICI Bank',
-    network: 'Visa',
-    ruleData: {
-      ruleType: 'direct',
-      categories: [],
-      exclusions: ['fuel', 'wallet-load'],
-      pointsPerDollar: 2,
-      capPoints: null,
-    },
-    evidenceStatus: 'officially-documented',
-    sourceUrl: 'https://icicibank.com/platinum',
-  },
+async function upsertVerificationRecord(
+  client: PoolClient,
+  spec: SeedCard,
+  sourceId: string
+): Promise<string> {
+  const existing = await client.query(
+    `SELECT id FROM verification_records
+     WHERE source_id = $1 AND evidence_status = $2
+     LIMIT 1`,
+    [sourceId, spec.evidenceStatus]
+  )
+  if (existing.rows[0]) return existing.rows[0].id as string
 
-  // SBI Card (5 cards)
-  {
-    name: 'SBI Card Elite',
-    issuer: 'SBI Card',
-    network: 'Visa',
-    ruleData: {
-      ruleType: 'direct',
-      categories: [],
-      exclusions: ['fuel', 'wallet-load'],
-      pointsPerDollar: 3,
-      capPoints: null,
-    },
-    evidenceStatus: 'officially-documented',
-    sourceUrl: 'https://sbicard.com/elite-benefits',
-  },
-  {
-    name: 'SBI SimplyCLICK',
-    issuer: 'SBI Card',
-    network: 'Visa',
-    ruleData: {
-      ruleType: 'direct',
-      categories: ['online'],
-      exclusions: ['fuel', 'wallet-load'],
-      pointsPerDollar: 10,
-      capPoints: 1000,
-    },
-    evidenceStatus: 'statement-verified',
-    sourceUrl: 'https://sbicard.com/simplyclick',
-  },
-  {
-    name: 'SBI Air India Signature',
-    issuer: 'SBI Card',
-    network: 'Visa',
-    ruleData: {
-      ruleType: 'variable',
-      categories: ['travel'],
-      exclusions: ['fuel', 'wallet-load'],
-      pointsPerDollar: 10,
-      capPoints: null,
-    },
-    evidenceStatus: 'officially-documented',
-    sourceUrl: 'https://sbicard.com/air-india-signature',
-    redemption: {
-      type: 'airline-miles',
-      applicableCategories: ['travel'],
-      centsPerPoint: 0.5,
-      annualFeeCents: 499900,
-    },
-  },
-  {
-    name: 'SBI Cashback',
-    issuer: 'SBI Card',
-    network: 'Visa',
-    ruleData: {
-      ruleType: 'direct',
-      categories: ['online'],
-      exclusions: ['fuel', 'wallet-load', 'rent'],
-      pointsPerDollar: 5,
-      capPoints: null,
-    },
-    evidenceStatus: 'officially-documented',
-    sourceUrl: 'https://sbicard.com/cashback',
-  },
-  {
-    name: 'SBI Prime',
-    issuer: 'SBI Card',
-    network: 'Mastercard',
-    ruleData: {
-      ruleType: 'direct',
-      categories: [],
-      exclusions: ['fuel', 'wallet-load'],
-      pointsPerDollar: 2,
-      capPoints: null,
-    },
-    evidenceStatus: 'officially-documented',
-    sourceUrl: 'https://sbicard.com/prime',
-  },
+  const res = await client.query(
+    `INSERT INTO verification_records (source_id, evidence_status, verified_at, notes)
+     VALUES ($1, $2, $3, $4)
+     RETURNING id`,
+    [
+      sourceId,
+      spec.evidenceStatus,
+      `${SEED_VERIFIED_AT}T00:00:00Z`,
+      `${spec.sourceName}; checked ${SEED_VERIFIED_AT}`,
+    ]
+  )
+  return res.rows[0].id as string
+}
 
-  // IDFC First Bank (4 cards)
-  {
-    name: 'IDFC First Wealth',
-    issuer: 'IDFC First Bank',
-    network: 'Visa',
-    ruleData: {
-      ruleType: 'direct',
-      categories: [],
-      exclusions: ['fuel', 'wallet-load'],
-      pointsPerDollar: 6,
-      capPoints: null,
-    },
-    evidenceStatus: 'officially-documented',
-    sourceUrl: 'https://idfcfirstbank.com/wealth-card',
-  },
-  {
-    name: 'IDFC First Select',
-    issuer: 'IDFC First Bank',
-    network: 'Visa',
-    ruleData: {
-      ruleType: 'direct',
-      categories: [],
-      exclusions: ['fuel', 'wallet-load'],
-      pointsPerDollar: 3,
-      capPoints: null,
-    },
-    evidenceStatus: 'officially-documented',
-    sourceUrl: 'https://idfcfirstbank.com/select',
-  },
-  {
-    name: 'IDFC First Club Vistara',
-    issuer: 'IDFC First Bank',
-    network: 'Visa',
-    ruleData: {
-      ruleType: 'variable',
-      categories: ['travel', 'dining'],
-      exclusions: ['fuel', 'wallet-load'],
-      pointsPerDollar: 6,
-      capPoints: null,
-    },
-    evidenceStatus: 'statement-verified',
-    sourceUrl: 'https://idfcfirstbank.com/club-vistara',
-    redemption: {
-      type: 'airline-miles',
-      applicableCategories: ['travel', 'dining'],
-      centsPerPoint: 0.6,
-      annualFeeCents: 299900,
-    },
-  },
-  {
-    name: 'IDFC First Millennia',
-    issuer: 'IDFC First Bank',
-    network: 'Visa',
-    ruleData: {
-      ruleType: 'direct',
-      categories: ['online', 'dining'],
-      exclusions: ['fuel', 'wallet-load'],
-      pointsPerDollar: 10,
-      capPoints: 750,
-    },
-    evidenceStatus: 'statement-verified',
-    sourceUrl: 'https://idfcfirstbank.com/millennia',
-  },
+async function upsertLead(
+  client: PoolClient,
+  spec: SeedCard,
+  cardId: string,
+  verificationRecordId: string
+): Promise<'created' | 'exists'> {
+  const existing = await client.query(
+    `SELECT id FROM data_leads WHERE card_id = $1 AND source_url = $2 LIMIT 1`,
+    [cardId, spec.sourceUrl]
+  )
+  if (existing.rows[0]) return 'exists'
 
-  // IndusInd Bank (4 cards)
-  {
-    name: 'IndusInd Legend',
-    issuer: 'IndusInd Bank',
-    network: 'Mastercard',
-    ruleData: {
-      ruleType: 'direct',
-      categories: [],
-      exclusions: ['fuel', 'wallet-load', 'utilities'],
-      pointsPerDollar: 3,
-      capPoints: null,
-    },
-    evidenceStatus: 'officially-documented',
-    sourceUrl: 'https://indusind.com/legend',
-  },
-  {
-    name: 'IndusInd Pinnacle',
-    issuer: 'IndusInd Bank',
-    network: 'Visa',
-    ruleData: {
-      ruleType: 'direct',
-      categories: [],
-      exclusions: ['fuel', 'wallet-load'],
-      pointsPerDollar: 2,
-      capPoints: null,
-    },
-    evidenceStatus: 'officially-documented',
-    sourceUrl: 'https://indusind.com/pinnacle',
-  },
-  {
-    name: 'IndusInd Iconia Amex',
-    issuer: 'IndusInd Bank',
-    network: 'American Express',
-    ruleData: {
-      ruleType: 'variable',
-      categories: [],
-      exclusions: ['fuel', 'wallet-load', 'insurance'],
-      pointsPerDollar: 3,
-      capPoints: null,
-    },
-    evidenceStatus: 'inferred',
-    sourceUrl: 'https://indusind.com/iconia-amex',
-    redemption: {
-      type: 'travel-portal',
-      applicableCategories: [],
-      centsPerPoint: 0.5,
-      annualFeeCents: 1000000,
-    },
-  },
-  {
-    name: 'IndusInd Tiger',
-    issuer: 'IndusInd Bank',
-    network: 'Visa',
-    ruleData: {
-      ruleType: 'direct',
-      categories: ['dining', 'entertainment', 'grocery'],
-      exclusions: ['fuel', 'wallet-load'],
-      pointsPerDollar: 1.5,
-      capPoints: null,
-    },
-    evidenceStatus: 'community-reported',
-    sourceUrl: 'https://technofino.in/community/threads/indusind-tiger',
-  },
+  await client.query(
+    `INSERT INTO data_leads (card_id, proposed_rule_data, source_url, verification_record_id)
+     VALUES ($1, $2, $3, $4)`,
+    [cardId, JSON.stringify(spec.ruleData), spec.sourceUrl, verificationRecordId]
+  )
+  return 'created'
+}
 
-  // Amex (4 cards)
-  {
-    name: 'American Express Platinum Travel',
-    issuer: 'American Express',
-    network: 'American Express',
-    ruleData: {
-      ruleType: 'variable',
-      categories: [],
-      exclusions: ['fuel', 'wallet-load'],
-      pointsPerDollar: 1,
-      capPoints: null,
-    },
-    evidenceStatus: 'officially-documented',
-    sourceUrl: 'https://americanexpress.com/in/platinum-travel',
-    redemption: {
-      type: 'membership-rewards',
-      applicableCategories: [],
-      centsPerPoint: 0.5,
-      annualFeeCents: 350000,
-    },
-  },
-  {
-    name: 'American Express Platinum Charge',
-    issuer: 'American Express',
-    network: 'American Express',
-    ruleData: {
-      ruleType: 'variable',
-      categories: [],
-      exclusions: ['fuel', 'wallet-load', 'utilities'],
-      pointsPerDollar: 1,
-      capPoints: null,
-    },
-    evidenceStatus: 'officially-documented',
-    sourceUrl: 'https://americanexpress.com/in/platinum-charge',
-    redemption: {
-      type: 'membership-rewards',
-      applicableCategories: [],
-      centsPerPoint: 0.5,
-      annualFeeCents: 6000000,
-    },
-  },
-  {
-    name: 'American Express Gold Charge',
-    issuer: 'American Express',
-    network: 'American Express',
-    ruleData: {
-      ruleType: 'variable',
-      categories: [],
-      exclusions: ['fuel', 'wallet-load'],
-      pointsPerDollar: 1,
-      capPoints: null,
-    },
-    evidenceStatus: 'officially-documented',
-    sourceUrl: 'https://americanexpress.com/in/gold-charge',
-    redemption: {
-      type: 'membership-rewards',
-      applicableCategories: [],
-      centsPerPoint: 0.5,
-      annualFeeCents: 450000,
-    },
-  },
-  {
-    name: 'American Express SmartEarn',
-    issuer: 'American Express',
-    network: 'American Express',
-    ruleData: {
-      ruleType: 'direct',
-      categories: ['online', 'dining'],
-      exclusions: ['fuel', 'wallet-load'],
-      pointsPerDollar: 5,
-      capPoints: null,
-    },
-    evidenceStatus: 'officially-documented',
-    sourceUrl: 'https://americanexpress.com/in/smartearn',
-  },
+async function upsertRedemptionScenarios(
+  client: PoolClient,
+  spec: SeedCard,
+  cardId: string
+): Promise<number> {
+  let inserted = 0
+  for (const r of spec.redemptions) {
+    const existing = await client.query(
+      `SELECT id FROM redemption_scenarios WHERE card_id = $1 AND redemption_type = $2 LIMIT 1`,
+      [cardId, r.redemptionType]
+    )
+    if (existing.rows[0]) continue
 
-  // Standard Chartered (4 cards)
-  {
-    name: 'Standard Chartered Ultimate',
-    issuer: 'Standard Chartered',
-    network: 'Visa',
-    ruleData: {
-      ruleType: 'direct',
-      categories: [],
-      exclusions: ['fuel', 'wallet-load', 'utilities'],
-      pointsPerDollar: 5,
-      capPoints: null,
-    },
-    evidenceStatus: 'officially-documented',
-    sourceUrl: 'https://sc.com/in/ultimate',
-  },
-  {
-    name: 'Standard Chartered DigiSmart',
-    issuer: 'Standard Chartered',
-    network: 'Visa',
-    ruleData: {
-      ruleType: 'direct',
-      categories: ['online'],
-      exclusions: ['fuel', 'wallet-load'],
-      pointsPerDollar: 10,
-      capPoints: 1000,
-    },
-    evidenceStatus: 'statement-verified',
-    sourceUrl: 'https://sc.com/in/digismart',
-  },
-  {
-    name: 'Standard Chartered Platinum Rewards',
-    issuer: 'Standard Chartered',
-    network: 'Mastercard',
-    ruleData: {
-      ruleType: 'direct',
-      categories: [],
-      exclusions: ['fuel', 'wallet-load'],
-      pointsPerDollar: 1,
-      capPoints: null,
-    },
-    evidenceStatus: 'officially-documented',
-    sourceUrl: 'https://sc.com/in/platinum-rewards',
-  },
-  {
-    name: 'Standard Chartered Super Value Titanium',
-    issuer: 'Standard Chartered',
-    network: 'Visa',
-    ruleData: {
-      ruleType: 'direct',
-      categories: ['dining', 'grocery', 'departmental'],
-      exclusions: ['fuel', 'wallet-load'],
-      pointsPerDollar: 5,
-      capPoints: 500,
-    },
-    evidenceStatus: 'inferred',
-    sourceUrl: 'https://sc.com/in/titanium-tnc',
-  },
-]
+    await client.query(
+      `INSERT INTO redemption_scenarios
+         (card_id, name, description, redemption_type, applicable_categories,
+          cents_per_point, effective_from, effective_to)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        cardId,
+        r.name,
+        r.description,
+        r.redemptionType,
+        JSON.stringify(r.applicableCategories),
+        r.centsPerPoint,
+        r.effectiveFrom,
+        r.effectiveTo,
+      ]
+    )
+    inserted += 1
+  }
+  return inserted
+}
 
-async function main() {
-  console.log(`Seeding ${cardSpecs.length} verified cards...`)
+async function prepare(pool: Pool) {
+  const rejected = ALL_SEED_CARDS.map(spec => ({
+    spec,
+    check: validateEvidence({
+      issuer: spec.issuer,
+      evidenceStatus: spec.evidenceStatus,
+      sourceUrl: spec.sourceUrl,
+    }),
+  })).filter(r => !r.check.ok)
 
-  for (const spec of cardSpecs) {
-    console.log(`\n${spec.name} (${spec.issuer})...`)
-
-    // 1. Create card
-    const [card] = await db
-      .insert(cards)
-      .values({
-        name: spec.name,
-        issuer: spec.issuer,
-        network: spec.network,
-      })
-      .returning()
-
-    // 2. Create source
-    const [source] = await db
-      .insert(sources)
-      .values({
-        name: `${spec.issuer} official documentation`,
-        url: spec.sourceUrl,
-      })
-      .returning()
-
-    // 3. Create verification record
-    const [verificationRecord] = await db
-      .insert(verificationRecords)
-      .values({
-        sourceId: source.id,
-        evidenceStatus: spec.evidenceStatus,
-        verifiedAt: new Date(SEED_DATE),
-        notes: `Verified against ${spec.issuer} T&C as of ${SEED_DATE}`,
-      })
-      .returning()
-
-    // 4. Create rule version
-    await db.insert(ruleVersions).values({
-      cardId: card.id,
-      verificationRecordId: verificationRecord.id,
-      effectiveFrom: SEED_DATE,
-      effectiveTo: null,
-      ruleData: spec.ruleData,
-    })
-
-    // 5. Create redemption scenario if variable reward
-    if (spec.ruleData.ruleType === 'variable' && spec.redemption) {
-      await db.insert(redemptionScenarios).values({
-        cardId: card.id,
-        name: spec.redemption.type,
-        description: `Redemption via ${spec.redemption.type}`,
-      })
+  if (rejected.length > 0) {
+    for (const r of rejected) {
+      console.error(
+        `  ✗ ${r.spec.issuer} ${r.spec.name}: ${r.check.ok === false ? r.check.error : ''}`
+      )
     }
-
-    console.log(`  ✓ ${spec.name} seeded with ${spec.evidenceStatus} evidence`)
+    throw new Error(`${rejected.length} card(s) failed evidence validation; nothing was seeded`)
   }
 
-  console.log(`\n✅ Successfully seeded ${cardSpecs.length} cards`)
-  console.log(`\nCoverage:`)
+  let leadsCreated = 0
+  let leadsExisting = 0
+  let scenarios = 0
 
-  const issuers = new Set(cardSpecs.map(c => c.issuer))
-  console.log(`  Issuers: ${issuers.size} (${Array.from(issuers).join(', ')})`)
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    for (const spec of ALL_SEED_CARDS) {
+      const cardId = await upsertCard(client, spec)
+      const sourceId = await upsertSource(client, spec)
+      const verificationRecordId = await upsertVerificationRecord(client, spec, sourceId)
+      const lead = await upsertLead(client, spec, cardId, verificationRecordId)
+      if (lead === 'created') {
+        leadsCreated += 1
+      } else {
+        leadsExisting += 1
+      }
+      scenarios += await upsertRedemptionScenarios(client, spec, cardId)
+    }
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
 
-  const rewardTypes = new Set(cardSpecs.map(c => c.ruleData.ruleType))
-  console.log(`  Reward types: ${rewardTypes.size} (${Array.from(rewardTypes).join(', ')})`)
+  console.log(`Prepared ${ALL_SEED_CARDS.length} cards with provenance.`)
+  console.log(`  Data Leads created: ${leadsCreated} (already present: ${leadsExisting})`)
+  console.log(`  Redemption Scenarios created: ${scenarios}`)
+  console.log(`\nNothing is published yet. Run "npm run seed -- --approve" to walk the`)
+  console.log(`pending leads through the Publication Gate, or approve them in the admin API.`)
+}
 
-  const evidenceTypes = new Set(cardSpecs.map(c => c.evidenceStatus))
-  console.log(`  Evidence types: ${evidenceTypes.size} (${Array.from(evidenceTypes).join(', ')})`)
+async function approvePending(pool: Pool) {
+  const pending = await pool.query(
+    `SELECT dl.id, c.issuer, c.name
+     FROM data_leads dl
+     JOIN cards c ON c.id = dl.card_id
+     WHERE dl.status = 'pending'
+     ORDER BY c.issuer, c.name`
+  )
 
-  const variableCards = cardSpecs.filter(c => c.ruleData.ruleType === 'variable').length
-  console.log(`  Variable reward cards: ${variableCards}`)
+  const published: string[] = []
+  const withheld: string[] = []
 
-  process.exit(0)
+  for (const lead of pending.rows) {
+    const label = `${lead.issuer} ${lead.name}`
+    const result = await publishLead(pool, lead.id, SEED_EFFECTIVE_FROM)
+    if (result.ok) {
+      published.push(label)
+    } else {
+      withheld.push(`${label} — ${result.error}`)
+    }
+  }
+
+  console.log(`Publication Gate processed ${pending.rowCount} pending Data Lead(s).`)
+  console.log(`\nPublished (${published.length}):`)
+  for (const p of published) console.log(`  ✓ ${p}`)
+  console.log(`\nWithheld (${withheld.length}):`)
+  for (const w of withheld) console.log(`  – ${w}`)
+}
+
+async function report(pool: Pool) {
+  const res = await pool.query(
+    `SELECT c.issuer, c.name, c.reward_currency, c.annual_fee_cents, vr.evidence_status
+     FROM rule_versions rv
+     JOIN cards c ON c.id = rv.card_id
+     JOIN verification_records vr ON vr.id = rv.verification_record_id
+     WHERE rv.effective_to IS NULL`
+  )
+
+  const rows = res.rows as {
+    issuer: string
+    reward_currency: string
+    annual_fee_cents: number | null
+    evidence_status: string
+  }[]
+
+  const count = (values: string[]) =>
+    Array.from(new Set(values))
+      .sort()
+      .map(v => `${v} (${values.filter(x => x === v).length})`)
+      .join(', ')
+
+  console.log(`\nVerified Card Set: ${rows.length} card(s) with a published Rule Version.`)
+  console.log(`  Issuers: ${count(rows.map(r => r.issuer))}`)
+  console.log(`  Reward currencies: ${count(rows.map(r => r.reward_currency))}`)
+  console.log(`  Fee bands: ${count(rows.map(r => classifyFeeBand(r.annual_fee_cents)))}`)
+  console.log(`  Evidence: ${count(rows.map(r => r.evidence_status))}`)
+}
+
+async function main() {
+  const url = process.env.DATABASE_URL
+  if (!url) {
+    console.error('DATABASE_URL is not set')
+    process.exit(1)
+  }
+
+  const pool = new Pool({ connectionString: url })
+  try {
+    if (approve) {
+      await approvePending(pool)
+      await report(pool)
+    } else {
+      await prepare(pool)
+    }
+  } finally {
+    await pool.end()
+  }
 }
 
 main().catch(err => {
-  console.error('Seed failed:', err)
+  console.error(err)
   process.exit(1)
 })
