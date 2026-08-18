@@ -51,6 +51,7 @@ export const ruleVersions = pgTable('rule_versions', {
   effectiveFrom: date('effective_from').notNull(),
   effectiveTo: date('effective_to'),
   ruleData: jsonb('rule_data').notNull(),
+  retractedAt: timestamp('retracted_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
@@ -83,4 +84,24 @@ export const dataLeads = pgTable('data_leads', {
   rejectionReason: text('rejection_reason'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+export const correctionHistory = pgTable('correction_history', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  ruleVersionId: uuid('rule_version_id').notNull().references(() => ruleVersions.id),
+  cardId: uuid('card_id').notNull().references(() => cards.id),
+  retractionReason: text('retraction_reason').notNull(),
+  retractedAt: timestamp('retracted_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+export const contextualReports = pgTable('contextual_reports', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  cardId: uuid('card_id').notNull().references(() => cards.id),
+  ruleVersionId: uuid('rule_version_id').references(() => ruleVersions.id),
+  traceContext: jsonb('trace_context'),
+  description: text('description').notNull(),
+  sourceUrl: text('source_url'),
+  dataLeadId: uuid('data_lead_id').references(() => dataLeads.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })

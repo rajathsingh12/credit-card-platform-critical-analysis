@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { pool } from '@/db/client'
 import { calculate } from '@/engine/calculate'
 import { toEngineRuleVersion, toEngineScenario, toIsoDate } from '@/catalog/db-mapping'
-import type { TransactionContext } from '@/engine/types'
+import type { TransactionContext, CalcResult } from '@/engine/types'
 import { validateCalculateInput } from './validate'
 
 export { validateCalculateInput } from './validate'
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
   const [rulesResult, scenariosResult] = await Promise.all([
     pool.query(
       `SELECT rv.id, rv.card_id, rv.effective_from, rv.effective_to, rv.rule_data,
-              vr.evidence_status, vr.verified_at
+              rv.retracted_at, vr.evidence_status, vr.verified_at
        FROM rule_versions rv
        JOIN verification_records vr ON vr.id = rv.verification_record_id
        WHERE rv.card_id = $1`,
@@ -44,9 +44,13 @@ export async function POST(request: NextRequest) {
   const rules = rulesResult.rows.map(toEngineRuleVersion)
   const scenarios = scenariosResult.rows.map(toEngineScenario)
 
-  const ruleMeta: Record<string, { evidenceStatus: string; sourceDate: string }> = {}
+  const ruleMeta: Record<string, { evidenceStatus: string; sourceDate: string; retractedAt: string | null }> = {}
   for (const row of rulesResult.rows) {
-    ruleMeta[row.id] = { evidenceStatus: row.evidence_status, sourceDate: toIsoDate(row.verified_at) }
+    ruleMeta[row.id] = {
+      evidenceStatus: row.evidence_status,
+      sourceDate: toIsoDate(row.verified_at),
+      retractedAt: row.retracted_at ? new Date(row.retracted_at).toISOString() : null,
+    }
   }
 
   const context: TransactionContext = {
@@ -57,7 +61,20 @@ export async function POST(request: NextRequest) {
     transactionDate,
   }
 
-  const result = calculate(context, rules, scenarios)
+  const raw = calculate(context, rules, scenarios)
+
+  // If the applied rule has been retracted, override to unresolved so the UI reflects the correction.
+  let result: CalcResult = raw
+  if (raw.ruleApplied && ruleMeta[raw.ruleApplied]?.retractedAt && raw.resolved) {
+    result = {
+      resolved: false,
+      transactionId: raw.transactionId,
+      reason: 'The rule used for this calculation has been retracted due to a correction.',
+      rewardsEarned: raw.rewardsEarned,
+      ruleApplied: raw.ruleApplied,
+      trace: raw.trace,
+    }
+  }
 
   return NextResponse.json({ result, ruleMeta })
 }

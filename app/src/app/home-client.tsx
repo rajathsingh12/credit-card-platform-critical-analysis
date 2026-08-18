@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import type { CalcResult, TraceEntry } from '@/engine/types'
 
 type CardOption = { id: string; name: string; issuer: string; rewardCurrency: string }
-type RuleMeta = { evidenceStatus: string; sourceDate: string }
+type RuleMeta = { evidenceStatus: string; sourceDate: string; retractedAt?: string | null }
 type CardResult = { card: CardOption; result: CalcResult; ruleMeta: Record<string, RuleMeta> }
 
 const CATEGORIES = [
@@ -62,7 +62,7 @@ const s: Record<string, React.CSSProperties> = {
   outcomeCardUnresolved: { background: '#fffbf0', border: '1px solid #f0d060' },
   cardName: { fontWeight: 700, fontSize: '1rem' },
   cardIssuer: { fontSize: '0.8125rem', color: '#555', marginBottom: '0.5rem' },
-  cardStatusRow: { marginBottom: '0.75rem' },
+  cardStatusRow: { marginBottom: '0.75rem', display: 'flex', gap: '0.4rem', flexWrap: 'wrap' as const },
   metricRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.3rem 0', borderBottom: '1px solid #eee', fontSize: '0.875rem' },
   metricLabel: { color: '#555' },
   metricValue: { fontWeight: 600 },
@@ -78,9 +78,16 @@ const s: Record<string, React.CSSProperties> = {
   tracePoints: { fontWeight: 600, marginBottom: '0.2rem' },
   traceInputs: { color: '#666', fontSize: '0.75rem', marginBottom: '0.2rem' },
   traceAssumptions: { color: '#555', fontStyle: 'italic', fontSize: '0.75rem', marginBottom: '0.2rem' },
-  traceMeta: { display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.25rem' },
+  traceMeta: { display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.25rem', flexWrap: 'wrap' as const },
   traceMetaDate: { fontSize: '0.75rem', color: '#777' },
   assumptionsBlock: { marginTop: '0.5rem', padding: '0.4rem 0.5rem', background: '#f5f5f5', borderRadius: 4, fontSize: '0.8125rem', color: '#555', fontStyle: 'italic' },
+  reportBtn: { marginTop: '0.5rem', fontSize: '0.75rem', color: '#555', background: 'none', border: '1px solid #ccc', borderRadius: 4, padding: '0.2rem 0.5rem', cursor: 'pointer' },
+  reportForm: { marginTop: '0.5rem', padding: '0.6rem', background: '#fffbf0', border: '1px solid #f0d060', borderRadius: 6, display: 'flex', flexDirection: 'column', gap: '0.4rem' },
+  reportTextarea: { width: '100%', boxSizing: 'border-box', fontSize: '0.8125rem', padding: '0.4rem', border: '1px solid #ccc', borderRadius: 4, resize: 'vertical' as const, minHeight: 60 },
+  reportInput: { width: '100%', boxSizing: 'border-box', fontSize: '0.8125rem', padding: '0.3rem 0.4rem', border: '1px solid #ccc', borderRadius: 4 },
+  reportSubmit: { alignSelf: 'flex-start', fontSize: '0.8125rem', padding: '0.3rem 0.75rem', background: '#1a1a1a', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' },
+  reportSubmitDisabled: { alignSelf: 'flex-start', fontSize: '0.8125rem', padding: '0.3rem 0.75rem', background: '#888', color: '#fff', border: 'none', borderRadius: 4, cursor: 'not-allowed' },
+  reportSuccess: { fontSize: '0.75rem', color: '#155724', background: '#d4edda', borderRadius: 4, padding: '0.3rem 0.5rem' },
 }
 
 function formatPaise(paise: number | null): string {
@@ -94,7 +101,82 @@ function EvidenceBadge({ status }: { status: string | undefined }) {
   return <span style={{ ...s.badge, ...c }}>{status.replace(/-/g, ' ')}</span>
 }
 
-function TraceSection({ entries, ruleMeta }: { entries: TraceEntry[]; ruleMeta: Record<string, RuleMeta> }) {
+function ReportForm({ cardId, ruleVersionId }: { cardId: string; ruleVersionId: string }) {
+  const [open, setOpen] = useState(false)
+  const [description, setDescription] = useState('')
+  const [sourceUrl, setSourceUrl] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!description.trim()) return
+    setSubmitting(true)
+    try {
+      await fetch('/api/reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cardId, ruleVersionId, description, sourceUrl: sourceUrl || undefined }),
+      })
+      setSubmitted(true)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (submitted) {
+    return <div style={s.reportSuccess}>Report submitted — thank you. A Data Lead has been created for review.</div>
+  }
+
+  return (
+    <>
+      {!open && (
+        <button style={s.reportBtn} type="button" onClick={() => setOpen(true)}>
+          Report an issue with this rule
+        </button>
+      )}
+      {open && (
+        <form style={s.reportForm} onSubmit={submit}>
+          <label style={{ ...s.label, marginBottom: 0 }}>Describe the issue</label>
+          <textarea
+            style={s.reportTextarea}
+            value={description}
+            onChange={e => setDescription(e.target.value)}
+            placeholder="e.g. The multiplier for dining is 3x, not 5x"
+            required
+          />
+          <input
+            style={s.reportInput}
+            type="url"
+            value={sourceUrl}
+            onChange={e => setSourceUrl(e.target.value)}
+            placeholder="Source URL (optional)"
+          />
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <button
+              style={submitting || !description.trim() ? s.reportSubmitDisabled : s.reportSubmit}
+              type="submit"
+              disabled={submitting || !description.trim()}
+            >
+              {submitting ? 'Submitting…' : 'Submit report'}
+            </button>
+            <button style={{ ...s.reportBtn, marginTop: 0 }} type="button" onClick={() => setOpen(false)}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+    </>
+  )
+}
+
+function TraceSection({
+  entries, ruleMeta, cardId,
+}: {
+  entries: TraceEntry[]
+  ruleMeta: Record<string, RuleMeta>
+  cardId: string
+}) {
   return (
     <div style={s.traceSection}>
       {entries.map(e => (
@@ -102,6 +184,9 @@ function TraceSection({ entries, ruleMeta }: { entries: TraceEntry[]; ruleMeta: 
           <div style={s.traceEntryHeader}>
             <span style={s.traceRuleId}>{e.ruleId}</span>
             {e.applied && <span style={{ ...s.badge, background: '#d4edda', color: '#155724' }}>applied</span>}
+            {ruleMeta[e.ruleId]?.retractedAt && (
+              <span style={{ ...s.badge, background: '#f8d7da', color: '#721c24' }}>retracted</span>
+            )}
             <span style={s.traceDate}>eff.&nbsp;{e.ruleEffectiveFrom}</span>
           </div>
           <div style={s.traceReason}>{e.reason}</div>
@@ -131,6 +216,7 @@ function TraceSection({ entries, ruleMeta }: { entries: TraceEntry[]; ruleMeta: 
               <span style={s.traceMetaDate}>src&nbsp;{ruleMeta[e.ruleId].sourceDate}</span>
             </div>
           )}
+          <ReportForm cardId={cardId} ruleVersionId={e.ruleId} />
         </div>
       ))}
     </div>
@@ -147,6 +233,7 @@ function OutcomeCard({
   const appliedEntry = result.ruleApplied
     ? result.trace.entries.find(e => e.ruleId === result.ruleApplied)
     : undefined
+  const isRetracted = !!(appliedMeta?.retractedAt)
   return (
     <div style={{ ...s.outcomeCard, ...(result.resolved ? {} : s.outcomeCardUnresolved) }}>
       <div style={s.cardName}>{card.name}</div>
@@ -157,6 +244,11 @@ function OutcomeCard({
           : { background: '#fff3cd', color: '#856404' }) }}>
           {result.resolved ? 'Resolved' : 'Unresolved'}
         </span>
+        {isRetracted && (
+          <span style={{ ...s.badge, background: '#f8d7da', color: '#721c24' }}>
+            rule retracted
+          </span>
+        )}
       </div>
       <div style={s.metricRow}>
         <span style={s.metricLabel}>Rewards earned</span>
@@ -201,10 +293,60 @@ function OutcomeCard({
       <button style={s.traceToggle} onClick={onToggleTrace} type="button">
         {traceOpen ? '▲' : '▼'}&nbsp;Calculation trace&nbsp;({result.trace.entries.length}&nbsp;rules)
       </button>
-      {traceOpen && <TraceSection entries={result.trace.entries} ruleMeta={ruleMeta} />}
+      {traceOpen && (
+        <TraceSection entries={result.trace.entries} ruleMeta={ruleMeta} cardId={card.id} />
+      )}
     </div>
   )
 }
+
+type CorrectionEntry = {
+  id: string
+  ruleVersionId: string
+  retractionReason: string
+  retractedAt: string
+  card: { id: string; name: string; issuer: string }
+}
+
+function CorrectionHistorySection() {
+  const [entries, setEntries] = useState<CorrectionEntry[]>([])
+  const [open, setOpen] = useState(false)
+  const [loaded, setLoaded] = useState(false)
+
+  async function load() {
+    if (loaded) { setOpen(true); return }
+    const res = await fetch('/api/correction-history')
+    const data = await res.json()
+    setEntries(data.entries ?? [])
+    setLoaded(true)
+    setOpen(true)
+  }
+
+  return (
+    <div style={{ marginTop: '2rem', borderTop: '1px solid #e0e0e0', paddingTop: '1rem' }}>
+      <button style={s.linkBtn} type="button" onClick={open ? () => setOpen(false) : load}>
+        {open ? '▲' : '▼'}&nbsp;Correction History
+      </button>
+      {open && (
+        <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          {entries.length === 0 && (
+            <p style={{ fontSize: '0.875rem', color: '#555' }}>No corrections on record.</p>
+          )}
+          {entries.map(e => (
+            <div key={e.id} style={{ padding: '0.6rem 0.75rem', background: '#fff8f0', border: '1px solid #f0c060', borderRadius: 6, fontSize: '0.8125rem' }}>
+              <div style={{ fontWeight: 600 }}>{e.card.issuer} — {e.card.name}</div>
+              <div style={{ color: '#555', marginTop: '0.2rem' }}>{e.retractionReason}</div>
+              <div style={{ color: '#888', fontSize: '0.75rem', marginTop: '0.2rem' }}>
+                Rule version {e.ruleVersionId.slice(0, 8)}… retracted {new Date(e.retractedAt).toLocaleDateString()}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function toggleItem(set: Set<string>, key: string): Set<string> {
   const next = new Set(set)
   next.has(key) ? next.delete(key) : next.add(key)
@@ -364,6 +506,8 @@ export default function HomeClient() {
           ))}
         </div>
       )}
+
+      <CorrectionHistorySection />
     </main>
   )
 }
