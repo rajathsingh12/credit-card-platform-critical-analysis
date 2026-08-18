@@ -1,7 +1,7 @@
 import type { Pool } from 'pg'
 
 export type RetractionResult =
-  | { ok: true; correctionHistoryId: string; retractedAt: string }
+  | { ok: true; correctionHistoryId: string; retractedAt: string; cardId: string }
   | { ok: false; code: 'not-found' | 'already-retracted' | 'invalid-reason'; error: string }
 
 export function validateRetractionReason(
@@ -76,6 +76,7 @@ export async function retractRuleVersion(
       ok: true,
       correctionHistoryId: row.id,
       retractedAt: new Date(row.retracted_at).toISOString(),
+      cardId: rv.card_id,
     }
   } catch (err) {
     await client.query('ROLLBACK')

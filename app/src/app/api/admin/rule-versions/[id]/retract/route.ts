@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { pool } from '@/db/client'
 import { retractRuleVersion } from '@/admin/retract'
+import { logEvent } from '@/telemetry/events-db'
 
 export const runtime = 'nodejs'
 
@@ -19,6 +20,7 @@ export async function POST(
     return NextResponse.json({ error: result.error }, { status })
   }
 
+  void logEvent({ eventName: 'correction_retracted', payload: { ruleVersionId: id, cardId: result.cardId } }).catch(() => {})
   return NextResponse.json({
     correctionHistoryId: result.correctionHistoryId,
     retractedAt: result.retractedAt,

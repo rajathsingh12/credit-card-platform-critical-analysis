@@ -79,23 +79,25 @@ export async function POST(request: NextRequest) {
   }
 
   const sessionToken = request.cookies.get(BETA_COOKIE)?.value
-  void emitDecisionEvents(sessionToken, cardId, result)
+  if (sessionToken) {
+    void emitDecisionEvents(sessionToken, cardId, result)
+  }
 
   return NextResponse.json({ result, ruleMeta })
 }
 
 async function emitDecisionEvents(
-  sessionToken: string | undefined,
+  sessionToken: string,
   cardId: string,
   result: CalcResult
 ): Promise<void> {
   try {
-    const prior = sessionToken ? await sessionDecisionCount(sessionToken) : 0
+    const prior = await sessionDecisionCount(sessionToken)
     await logEvent({ eventName: 'decision_completed', sessionToken, payload: { cardId, resolved: result.resolved } })
     if (!result.resolved) {
       await logEvent({ eventName: 'unresolved_outcome_shown', sessionToken, payload: { cardId, reason: result.reason } })
     }
-    if (prior > 0 && sessionToken) {
+    if (prior > 0) {
       await logEvent({ eventName: 'session_repeat', sessionToken, payload: { priorDecisions: prior } })
     }
   } catch {

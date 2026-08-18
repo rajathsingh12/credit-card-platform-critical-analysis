@@ -68,7 +68,9 @@ export async function POST(request: NextRequest) {
     await client.query('COMMIT')
     const row = reportRes.rows[0]
     const sessionToken = request.cookies.get(BETA_COOKIE)?.value
-    void logEvent({ eventName: 'contextual_report_submitted', sessionToken, payload: { cardId, reportId: row.id } }).catch(() => {})
+    if (sessionToken) {
+      void logEvent({ eventName: 'contextual_report_submitted', sessionToken, payload: { cardId, reportId: row.id } }).catch(() => {})
+    }
     return NextResponse.json({ reportId: row.id, dataLeadId, createdAt: row.created_at }, { status: 201 })
   } catch (err) {
     await client.query('ROLLBACK')
