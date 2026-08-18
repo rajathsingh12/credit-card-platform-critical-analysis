@@ -67,6 +67,12 @@ export const redemptionScenarios = pgTable('redemption_scenarios', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
+export const inviteCodes = pgTable('invite_codes', {
+  code: text('code').primaryKey(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+})
+
 export const dataLeads = pgTable('data_leads', {
   id: uuid('id').primaryKey().defaultRandom(),
   cardId: uuid('card_id').notNull().references(() => cards.id),
