@@ -131,6 +131,7 @@ export function calculate(
     const isApplied = best !== null && r.rule.id === best.rule.id
     return {
       ruleId: r.rule.id,
+      ruleEffectiveFrom: r.rule.effectiveFrom,
       applied: isApplied,
       reason: isApplied ? 'selected: highest earn rate among matching rules' : r.reason,
       inputs: {

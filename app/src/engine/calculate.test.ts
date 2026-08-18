@@ -337,6 +337,14 @@ describe('calculation trace', () => {
     const notApplied = outcome.trace.entries.find(e => e.ruleId === 'r2')
     expect(notApplied?.applied).toBe(false)
   })
+
+  it('records ruleEffectiveFrom in every trace entry', () => {
+    const outcome = calculate(
+      makeContext(),
+      [makeRule('r1', { effectiveFrom: '2024-03-15', categories: ['dining'] })]
+    )
+    expect(outcome.trace.entries[0].ruleEffectiveFrom).toBe('2024-03-15')
+  })
 })
 
 // --- fee scenarios ---

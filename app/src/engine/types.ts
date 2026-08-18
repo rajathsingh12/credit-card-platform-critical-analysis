@@ -47,6 +47,7 @@ export interface RuleVersion {
 
 export interface TraceEntry {
   ruleId: string
+  ruleEffectiveFrom: string
   applied: boolean
   reason: string
   inputs: {

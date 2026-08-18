@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { pool } from '@/db/client'
 import { calculate } from '@/engine/calculate'
-import { toEngineRuleVersion, toEngineScenario } from '@/catalog/db-mapping'
+import { toEngineRuleVersion, toEngineScenario, toIsoDate } from '@/catalog/db-mapping'
 import type { TransactionContext } from '@/engine/types'
 import { validateCalculateInput } from './validate'
 
@@ -23,9 +23,11 @@ export async function POST(request: NextRequest) {
 
   const [rulesResult, scenariosResult] = await Promise.all([
     pool.query(
-      `SELECT id, card_id, effective_from, effective_to, rule_data
-       FROM rule_versions
-       WHERE card_id = $1`,
+      `SELECT rv.id, rv.card_id, rv.effective_from, rv.effective_to, rv.rule_data,
+              vr.evidence_status, vr.verified_at
+       FROM rule_versions rv
+       JOIN verification_records vr ON vr.id = rv.verification_record_id
+       WHERE rv.card_id = $1`,
       [cardId]
     ),
     pool.query(
@@ -42,6 +44,11 @@ export async function POST(request: NextRequest) {
   const rules = rulesResult.rows.map(toEngineRuleVersion)
   const scenarios = scenariosResult.rows.map(toEngineScenario)
 
+  const ruleMeta: Record<string, { evidenceStatus: string; sourceDate: string }> = {}
+  for (const row of rulesResult.rows) {
+    ruleMeta[row.id] = { evidenceStatus: row.evidence_status, sourceDate: toIsoDate(row.verified_at) }
+  }
+
   const context: TransactionContext = {
     transactionId: `txn-${Date.now()}`,
     amount: amountPaise,
@@ -52,5 +59,5 @@ export async function POST(request: NextRequest) {
 
   const result = calculate(context, rules, scenarios)
 
-  return NextResponse.json({ result })
+  return NextResponse.json({ result, ruleMeta })
 }
