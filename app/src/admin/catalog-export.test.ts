@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { assembleCatalog, catalogVersionLabel, type RvRow, type RsRow } from './catalog-export'
+import {
+  assembleCatalog,
+  catalogVersionLabel,
+  windowsOverlap,
+  type RvRow,
+  type RsRow,
+} from './catalog-export'
 
 const NOW = new Date('2026-08-18T10:00:00.000Z')
 
@@ -104,5 +110,101 @@ describe('assembleCatalog', () => {
   it('handles null annual_fee_cents', () => {
     const rv: RvRow = { ...RV_ROW_A, annual_fee_cents: null }
     expect(assembleCatalog([rv], [], NOW).cards[0].annualFeeCents).toBeNull()
+  })
+
+  it('exposes an empty redemptionScenarios array on every rule version when there are none', () => {
+    const { cards } = assembleCatalog([RV_ROW_A], [], NOW)
+    expect(cards[0].ruleVersions[0].redemptionScenarios).toEqual([])
+  })
+
+  it('attaches an overlapping scenario to its rule version and keeps the card-level array', () => {
+    const { cards } = assembleCatalog([RV_ROW_A], [RS_ROW_A], NOW)
+    const card = cards[0]
+    expect(card.redemptionScenarios).toHaveLength(1)
+    expect(card.ruleVersions[0].redemptionScenarios).toHaveLength(1)
+    expect(card.ruleVersions[0].redemptionScenarios[0].id).toBe('rs-1')
+  })
+
+  it('does not pair a disjoint scenario with a rule version', () => {
+    const disjoint: RsRow = { ...RS_ROW_A, effective_from: '2023-01-01', effective_to: '2023-12-31' }
+    const { cards } = assembleCatalog([RV_ROW_A], [disjoint], NOW)
+    const card = cards[0]
+    expect(card.redemptionScenarios).toHaveLength(1)
+    expect(card.ruleVersions[0].redemptionScenarios).toHaveLength(0)
+  })
+
+  it('pairs a scenario that begins on a rule version effectiveTo date (inclusive boundary)', () => {
+    const boundary: RsRow = { ...RS_ROW_A, effective_from: '2024-12-31', effective_to: '2025-06-30' }
+    const { cards } = assembleCatalog([RV_ROW_PRIOR, RV_ROW_A], [boundary], NOW)
+    const card = cards[0]
+    const prior = card.ruleVersions.find(r => r.id === 'rv-prior')!
+    const current = card.ruleVersions.find(r => r.id === 'rv-1')!
+    expect(prior.effectiveTo).toBe('2024-12-31')
+    expect(prior.redemptionScenarios.map(s => s.id)).toEqual(['rs-1'])
+    expect(current.redemptionScenarios.map(s => s.id)).toEqual(['rs-1'])
+  })
+
+  it('pairs a scenario that ends on a rule version effectiveFrom date (inclusive boundary)', () => {
+    const ending: RsRow = { ...RS_ROW_A, effective_from: '2023-06-01', effective_to: '2024-01-01' }
+    const { cards } = assembleCatalog([RV_ROW_PRIOR], [ending], NOW)
+    const prior = cards[0].ruleVersions[0]
+    expect(prior.effectiveFrom).toBe('2024-01-01')
+    expect(prior.redemptionScenarios.map(s => s.id)).toEqual(['rs-1'])
+  })
+
+  it('pairs an open-ended scenario with an open-ended rule version', () => {
+    const { cards } = assembleCatalog([RV_ROW_A], [RS_ROW_A], NOW)
+    expect(cards[0].ruleVersions[0].effectiveTo).toBeNull()
+    expect(cards[0].ruleVersions[0].redemptionScenarios.map(s => s.id)).toEqual(['rs-1'])
+  })
+
+  it('does not pair an open-ended rule version with a bounded scenario that ended before it began', () => {
+    const openVersion: RvRow = { ...RV_ROW_A, rv_effective_from: '2025-01-01', rv_effective_to: null }
+    const pastOnly: RsRow = { ...RS_ROW_A, effective_from: '2023-01-01', effective_to: '2024-12-31' }
+    const { cards } = assembleCatalog([openVersion], [pastOnly], NOW)
+    expect(cards[0].redemptionScenarios).toHaveLength(1)
+    expect(cards[0].ruleVersions[0].redemptionScenarios).toHaveLength(0)
+  })
+
+  it('spreads a scenario across multiple overlapping rule versions while keeping one card-level entry', () => {
+    const spanning: RsRow = { ...RS_ROW_A, effective_from: '2024-01-01', effective_to: '2025-12-31' }
+    const { cards } = assembleCatalog([RV_ROW_PRIOR, RV_ROW_A], [spanning], NOW)
+    const card = cards[0]
+    expect(card.redemptionScenarios).toHaveLength(1)
+    expect(card.ruleVersions.find(r => r.id === 'rv-prior')!.redemptionScenarios).toHaveLength(1)
+    expect(card.ruleVersions.find(r => r.id === 'rv-1')!.redemptionScenarios).toHaveLength(1)
+  })
+
+  it('never pairs scenarios across cards even when date windows overlap', () => {
+    const rvCard2: RvRow = { ...RV_ROW_A, card_id: 'card-2', card_name: 'Millennia', rv_id: 'rv-2' }
+    // scenario belongs to card-2 but its window overlaps card-1's rule version
+    const rsCard2: RsRow = { ...RS_ROW_A, card_id: 'card-2', id: 'rs-2' }
+    const { cards } = assembleCatalog([RV_ROW_A, rvCard2], [RS_ROW_A, rsCard2], NOW)
+    const card1 = cards.find(c => c.id === 'card-1')!
+    const card2 = cards.find(c => c.id === 'card-2')!
+    expect(card1.redemptionScenarios.map(s => s.id)).toEqual(['rs-1'])
+    expect(card1.ruleVersions[0].redemptionScenarios.map(s => s.id)).toEqual(['rs-1'])
+    expect(card2.redemptionScenarios.map(s => s.id)).toEqual(['rs-2'])
+    expect(card2.ruleVersions[0].redemptionScenarios.map(s => s.id)).toEqual(['rs-2'])
+  })
+})
+
+describe('windowsOverlap', () => {
+  it('returns false for fully disjoint windows', () => {
+    expect(windowsOverlap('2025-01-01', '2025-02-01', '2025-03-01', null)).toBe(false)
+  })
+
+  it('returns true for ordinary overlap', () => {
+    expect(windowsOverlap('2025-01-01', '2025-06-30', '2025-03-01', '2025-09-30')).toBe(true)
+  })
+
+  it('honors inclusive boundaries both directions', () => {
+    expect(windowsOverlap('2025-06-30', '2025-12-31', '2025-01-01', '2025-06-30')).toBe(true)
+    expect(windowsOverlap('2025-01-01', '2025-01-01', '2025-01-01', '2025-12-31')).toBe(true)
+  })
+
+  it('treats null effectiveTo as unbounded', () => {
+    expect(windowsOverlap('2025-01-01', null, '2099-01-01', null)).toBe(true)
+    expect(windowsOverlap('2025-01-01', '2025-02-01', '2025-03-01', null)).toBe(false)
   })
 })

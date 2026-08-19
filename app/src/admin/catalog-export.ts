@@ -7,6 +7,7 @@ export type CatalogRuleVersion = {
   effectiveTo: string | null
   evidenceStatus: string
   ruleData: unknown
+  redemptionScenarios: CatalogRedemptionScenario[]
 }
 
 export type CatalogRedemptionScenario = {
@@ -67,6 +68,19 @@ export function catalogVersionLabel(date: Date): string {
   return date.toISOString().slice(0, 10)
 }
 
+// Both effective windows are inclusive; dates are normalized ISO `YYYY-MM-DD` strings,
+// so lexicographic comparison matches calendar ordering. A `null` effectiveTo is unbounded.
+export function windowsOverlap(
+  scenarioFrom: string,
+  scenarioTo: string | null,
+  versionFrom: string,
+  versionTo: string | null,
+): boolean {
+  const versionStartsBeforeScenarioEnds = versionTo === null || scenarioFrom <= versionTo
+  const scenarioStartsBeforeVersionEnds = scenarioTo === null || versionFrom <= scenarioTo
+  return versionStartsBeforeScenarioEnds && scenarioStartsBeforeVersionEnds
+}
+
 export function assembleCatalog(rvRows: RvRow[], rsRows: RsRow[], now: Date): CatalogExport {
   const cardMap = new Map<string, CatalogCard>()
 
@@ -90,6 +104,7 @@ export function assembleCatalog(rvRows: RvRow[], rsRows: RsRow[], now: Date): Ca
       effectiveTo: row.rv_effective_to === null ? null : toIsoDate(row.rv_effective_to),
       evidenceStatus: row.evidence_status,
       ruleData: row.rv_rule_data,
+      redemptionScenarios: [],
     })
   }
 
@@ -106,6 +121,25 @@ export function assembleCatalog(rvRows: RvRow[], rsRows: RsRow[], now: Date): Ca
       effectiveFrom: toIsoDate(row.effective_from),
       effectiveTo: row.effective_to === null ? null : toIsoDate(row.effective_to),
     })
+  }
+
+  // A scenario pairs with a Rule Version when their same-card effective windows overlap (inclusive);
+  // windowsOverlap is the unambiguous derived association the export claims to deliver.
+  for (const card of cardMap.values()) {
+    for (const version of card.ruleVersions) {
+      for (const scenario of card.redemptionScenarios) {
+        if (
+          windowsOverlap(
+            scenario.effectiveFrom,
+            scenario.effectiveTo,
+            version.effectiveFrom,
+            version.effectiveTo,
+          )
+        ) {
+          version.redemptionScenarios.push(scenario)
+        }
+      }
+    }
   }
 
   return {
