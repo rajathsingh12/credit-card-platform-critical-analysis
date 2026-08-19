@@ -48,7 +48,6 @@ export async function generateChangeFeed(
     FROM rule_versions rv
     INNER JOIN cards c ON c.id = rv.card_id
     WHERE rv.created_at > $1
-      AND rv.retracted_at IS NULL
     ORDER BY rv.created_at
   `,
     [sinceDate]

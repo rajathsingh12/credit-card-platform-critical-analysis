@@ -172,6 +172,84 @@ describe('generateChangeFeed', () => {
     expect(result.changes[2].changeType).toBe('redemption-scenario-added')
   })
 
+  it('emits both published and retracted for a version created and retracted in-window', async () => {
+    const mockPool = {
+      query: async (sql: string) => {
+        if (sql.includes('rv.created_at >')) {
+          return {
+            rows: [
+              {
+                rv_id: 'rv-same-window',
+                card_id: 'card-1',
+                card_name: 'Regalia Gold',
+                effective_from: '2026-09-01',
+                created_at: '2026-08-15T12:00:00.000Z',
+              },
+            ],
+          }
+        }
+        if (sql.includes('rv.retracted_at >')) {
+          return {
+            rows: [
+              {
+                rv_id: 'rv-same-window',
+                card_id: 'card-1',
+                card_name: 'Regalia Gold',
+                effective_from: '2026-09-01',
+                retracted_at: '2026-08-15T13:00:00.000Z',
+              },
+            ],
+          }
+        }
+        return { rows: [] }
+      },
+    } as unknown as Pool
+
+    const result = await generateChangeFeed(mockPool, SINCE, NOW)
+    expect(result.changes).toHaveLength(2)
+    expect(result.changes[0]).toMatchObject({
+      changeType: 'published',
+      ruleVersionId: 'rv-same-window',
+      timestamp: '2026-08-15T12:00:00.000Z',
+    })
+    expect(result.changes[1]).toMatchObject({
+      changeType: 'retracted',
+      ruleVersionId: 'rv-same-window',
+      timestamp: '2026-08-15T13:00:00.000Z',
+    })
+  })
+
+  it('emits only retracted for a version published before since and retracted after since', async () => {
+    const mockPool = {
+      query: async (sql: string) => {
+        if (sql.includes('rv.created_at >')) {
+          return { rows: [] }
+        }
+        if (sql.includes('rv.retracted_at >')) {
+          return {
+            rows: [
+              {
+                rv_id: 'rv-pre-window',
+                card_id: 'card-1',
+                card_name: 'Regalia Gold',
+                effective_from: '2025-01-01',
+                retracted_at: '2026-08-16T14:00:00.000Z',
+              },
+            ],
+          }
+        }
+        return { rows: [] }
+      },
+    } as unknown as Pool
+
+    const result = await generateChangeFeed(mockPool, SINCE, NOW)
+    expect(result.changes).toHaveLength(1)
+    expect(result.changes[0]).toMatchObject({
+      changeType: 'retracted',
+      ruleVersionId: 'rv-pre-window',
+    })
+  })
+
   it('handles Date objects for effective_from and timestamps', async () => {
     const mockPool = {
       query: async (sql: string) => {
