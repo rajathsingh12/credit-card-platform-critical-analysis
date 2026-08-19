@@ -27,10 +27,15 @@ type EvalResult = {
 
 type MatchedResult = EvalResult & { matched: true; pointsBeforeCap: number; pointsAfterCap: number }
 
+type ScenarioSelection = {
+  scenario: RedemptionScenario
+  poolSize: number
+}
+
 function selectScenario(
   context: TransactionContext,
   scenarios: RedemptionScenario[]
-): RedemptionScenario | null {
+): ScenarioSelection | null {
   const effective = scenarios.filter(
     s =>
       s.effectiveFrom <= context.transactionDate &&
@@ -49,7 +54,8 @@ function selectScenario(
       : effective.filter(s => s.applicableCategories.length === 0)
   if (pool.length === 0) return null
 
-  return pool.reduce((best, cur) => (cur.centsPerPoint > best.centsPerPoint ? cur : best))
+  const scenario = pool.reduce((best, cur) => (cur.centsPerPoint > best.centsPerPoint ? cur : best))
+  return { scenario, poolSize: pool.length }
 }
 
 function evalRule(context: TransactionContext, rule: RuleVersion): EvalResult {
@@ -127,8 +133,18 @@ export function calculate(
     null
   )
 
+  const selection =
+    best !== null && best.rule.ruleData.ruleType === 'variable'
+      ? selectScenario(context, scenarios)
+      : null
+
   const entries: TraceEntry[] = results.map(r => {
     const isApplied = best !== null && r.rule.id === best.rule.id
+    if (isApplied && selection !== null && selection.poolSize > 1) {
+      r.assumptions.push(
+        `selected scenario ${selection.scenario.id}: highest centsPerPoint (${selection.scenario.centsPerPoint}) among ${selection.poolSize} covering scenarios`
+      )
+    }
     return {
       ruleId: r.rule.id,
       ruleEffectiveFrom: r.rule.effectiveFrom,
@@ -152,8 +168,7 @@ export function calculate(
   const trace = { transactionId: context.transactionId, entries }
 
   if (best !== null && best.rule.ruleData.ruleType === 'variable') {
-    const scenario = selectScenario(context, scenarios)
-    if (scenario === null) {
+    if (selection === null) {
       return {
         resolved: false,
         transactionId: context.transactionId,
@@ -163,6 +178,7 @@ export function calculate(
         trace,
       } satisfies UnresolvedOutcome
     }
+    const { scenario } = selection
     const grossReturn = Math.round(best.pointsAfterCap * scenario.centsPerPoint)
     const annualFeeAmortizedCents =
       scenario.annualFeeCents !== null ? Math.round(scenario.annualFeeCents / 12) : null

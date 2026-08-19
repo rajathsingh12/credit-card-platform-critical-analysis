@@ -548,6 +548,35 @@ describe('scenario selection', () => {
     )
     expect(outcome.resolved).toBe(true)
   })
+
+  it('records tie-break assumption when multiple scenarios cover the transaction', () => {
+    const outcome = calculate(
+      makeContext({ amount: 10000, merchantCategory: 'dining' }),
+      [makeVariableRule('r1', { pointsPerDollar: 1 })],
+      [
+        makeScenario('low', { centsPerPoint: 1.0 }),
+        makeScenario('high', { centsPerPoint: 1.5 }),
+      ]
+    )
+    expect(outcome.resolved).toBe(true)
+    const applied = outcome.trace.entries.find(e => e.applied)
+    expect(applied?.assumptions.some(a =>
+      a.includes('selected scenario high') &&
+      a.includes('highest centsPerPoint (1.5)') &&
+      a.includes('among 2 covering scenarios')
+    )).toBe(true)
+  })
+
+  it('does not record tie-break assumption when only one scenario covers', () => {
+    const outcome = calculate(
+      makeContext({ amount: 10000, merchantCategory: 'dining' }),
+      [makeVariableRule('r1', { pointsPerDollar: 1 })],
+      [makeScenario('solo', { centsPerPoint: 1.5 })]
+    )
+    expect(outcome.resolved).toBe(true)
+    const applied = outcome.trace.entries.find(e => e.applied)
+    expect(applied?.assumptions.some(a => a.includes('selected scenario'))).toBe(false)
+  })
 })
 
 // --- net return and fee amortization ---
