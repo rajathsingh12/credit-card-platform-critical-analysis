@@ -274,4 +274,29 @@ describe('generateChangeFeed', () => {
     expect(result.changes[0].effectiveFrom).toBe('2026-09-01')
     expect(result.changes[0].timestamp).toBe('2026-08-15T12:00:00.000Z')
   })
+
+  it('excludes entries after the until upper bound', async () => {
+    const UNTIL = new Date('2026-08-14T00:00:00.000Z')
+    const seenSql: string[] = []
+    const seenParams: Date[][] = []
+    const mockPool = {
+      query: async (sql: string, params: Date[]) => {
+        seenSql.push(sql)
+        seenParams.push(params)
+        return { rows: [] }
+      },
+    } as unknown as Pool
+
+    const result = await generateChangeFeed(mockPool, SINCE, UNTIL)
+
+    expect(seenSql).toHaveLength(3)
+    expect(seenSql[0]).toContain('AND rv.created_at <= $2')
+    expect(seenSql[1]).toContain('AND rv.retracted_at <= $2')
+    expect(seenSql[2]).toContain('AND rs.created_at <= $2')
+    for (const params of seenParams) {
+      expect(params[0]).toBe(SINCE)
+      expect(params[1]).toBe(UNTIL)
+    }
+    expect(result.feedDate).toBe('2026-08-14')
+  })
 })

@@ -26,10 +26,10 @@ export function changeFeedLabel(date: Date): string {
 export async function generateChangeFeed(
   pool: Pool,
   sinceDate: Date,
-  now: Date
+  untilDate: Date
 ): Promise<ChangeFeed> {
   const sinceDateStr = changeFeedLabel(sinceDate)
-  const nowDateStr = changeFeedLabel(now)
+  const untilDateStr = changeFeedLabel(untilDate)
 
   const publishedRes = await pool.query<{
     rv_id: string
@@ -47,10 +47,10 @@ export async function generateChangeFeed(
       rv.created_at
     FROM rule_versions rv
     INNER JOIN cards c ON c.id = rv.card_id
-    WHERE rv.created_at > $1
+    WHERE rv.created_at > $1 AND rv.created_at <= $2
     ORDER BY rv.created_at
   `,
-    [sinceDate]
+    [sinceDate, untilDate]
   )
 
   const retractedRes = await pool.query<{
@@ -69,10 +69,10 @@ export async function generateChangeFeed(
       rv.retracted_at
     FROM rule_versions rv
     INNER JOIN cards c ON c.id = rv.card_id
-    WHERE rv.retracted_at > $1
+    WHERE rv.retracted_at > $1 AND rv.retracted_at <= $2
     ORDER BY rv.retracted_at
   `,
-    [sinceDate]
+    [sinceDate, untilDate]
   )
 
   const scenariosRes = await pool.query<{
@@ -91,10 +91,10 @@ export async function generateChangeFeed(
       rs.created_at
     FROM redemption_scenarios rs
     INNER JOIN cards c ON c.id = rs.card_id
-    WHERE rs.created_at > $1
+    WHERE rs.created_at > $1 AND rs.created_at <= $2
     ORDER BY rs.created_at
   `,
-    [sinceDate]
+    [sinceDate, untilDate]
   )
 
   const changes: ChangeFeedEntry[] = []
@@ -135,7 +135,7 @@ export async function generateChangeFeed(
   changes.sort((a, b) => a.timestamp.localeCompare(b.timestamp))
 
   return {
-    feedDate: nowDateStr,
+    feedDate: untilDateStr,
     sinceDate: sinceDateStr,
     changes,
   }

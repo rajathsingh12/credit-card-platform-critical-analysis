@@ -23,8 +23,19 @@ export async function GET(request: Request) {
     )
   }
 
-  const now = new Date()
-  const feed = await generateChangeFeed(pool, sinceDate, now)
+  const untilParam = searchParams.get('until')
+  let untilDate = new Date()
+  if (untilParam) {
+    untilDate = new Date(untilParam)
+    if (isNaN(untilDate.getTime())) {
+      return NextResponse.json(
+        { error: 'Invalid date format for "until" parameter. Expected YYYY-MM-DD.' },
+        { status: 400 }
+      )
+    }
+  }
+
+  const feed = await generateChangeFeed(pool, sinceDate, untilDate)
   const filename = `change-feed-${feed.sinceDate}-to-${feed.feedDate}.json`
 
   return new NextResponse(JSON.stringify(feed, null, 2), {
