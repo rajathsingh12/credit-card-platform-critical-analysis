@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { pool } from '@/db/client'
+import { validateEvidence, EVIDENCE_STATUSES, type EvidenceStatus } from '@/catalog/evidence'
 
 export const runtime = 'nodejs'
 
@@ -11,22 +12,34 @@ export async function POST(
   const body = await request.json().catch(() => null)
   const { evidenceStatus, notes } = body ?? {}
 
-  const validStatuses = ['officially-documented', 'statement-verified', 'inferred', 'community-reported']
-  if (!evidenceStatus || !validStatuses.includes(evidenceStatus)) {
+  if (!evidenceStatus || !EVIDENCE_STATUSES.includes(evidenceStatus as EvidenceStatus)) {
     return NextResponse.json(
-      { error: `evidenceStatus must be one of: ${validStatuses.join(', ')}` },
+      { error: `evidenceStatus must be one of: ${EVIDENCE_STATUSES.join(', ')}` },
       { status: 400 }
     )
   }
+  const status = evidenceStatus as EvidenceStatus
 
   const leadRes = await pool.query(
-    `SELECT id, source_url, status FROM data_leads WHERE id = $1`,
+    `SELECT dl.id, dl.source_url, dl.status, c.issuer AS issuer
+     FROM data_leads dl
+     JOIN cards c ON c.id = dl.card_id
+     WHERE dl.id = $1`,
     [id]
   )
   const lead = leadRes.rows[0]
   if (!lead) return NextResponse.json({ error: 'lead not found' }, { status: 404 })
   if (lead.status !== 'pending') {
     return NextResponse.json({ error: `lead is ${lead.status}, not pending` }, { status: 422 })
+  }
+
+  const evidence = validateEvidence({
+    issuer: lead.issuer,
+    evidenceStatus: status,
+    sourceUrl: lead.source_url,
+  })
+  if (!evidence.ok) {
+    return NextResponse.json({ error: evidence.error }, { status: 422 })
   }
 
   const client = await pool.connect()
