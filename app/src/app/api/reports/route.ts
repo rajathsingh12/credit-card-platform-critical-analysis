@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     await client.query('BEGIN')
 
     // Verify the card exists.
-    const cardCheck = await client.query(`SELECT id, rule_data FROM cards WHERE id = $1`, [cardId])
+    const cardCheck = await client.query(`SELECT id FROM cards WHERE id = $1`, [cardId])
     if (cardCheck.rows.length === 0) {
       await client.query('ROLLBACK')
       return NextResponse.json({ error: 'card not found' }, { status: 404 })
