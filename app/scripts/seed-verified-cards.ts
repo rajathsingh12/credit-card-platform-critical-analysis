@@ -3,8 +3,8 @@
  * Seeds the Verified Card Set in two steps, because a Data Lead is not platform knowledge
  * until a Data Steward approves it:
  *
- *   npm run seed             prepares cards, sources, verification records, and pending leads
- *   npm run seed -- --approve  walks the pending leads through the Publication Gate
+ *   npm run seed             prepares cards, sources, verification records, and pending Data Leads
+ *   npm run seed -- --approve  walks the pending Data Leads through the Publication Gate
  *
  * The approve step calls the same publishLead used by the admin approval route, so the seed
  * cannot publish anything a steward could not publish by hand.
@@ -181,7 +181,7 @@ async function prepare(pool: Pool) {
   console.log(`  Data Leads created: ${leadsCreated} (already present: ${leadsExisting})`)
   console.log(`  Redemption Scenarios created: ${scenarios}`)
   console.log(`\nNothing is published yet. Run "npm run seed -- --approve" to walk the`)
-  console.log(`pending leads through the Publication Gate, or approve them in the admin API.`)
+  console.log(`pending Data Leads through the Publication Gate, or approve them in the admin API.`)
 }
 
 async function approvePending(pool: Pool) {
