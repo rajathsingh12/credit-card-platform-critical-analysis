@@ -7,14 +7,17 @@ describe('validateCalculateInput', () => {
     amountRupees: 500,
     merchantName: 'Swiggy',
     merchantCategory: 'dining',
-    paymentChannel: 'online',
     transactionDate: '2025-06-15',
   }
 
   it('accepts a fully valid body', () => {
     const r = validateCalculateInput(valid)
     expect(r.ok).toBe(true)
-    if (r.ok) expect(r.data.amountRupees).toBe(500)
+    if (r.ok) {
+      expect(r.data.amountRupees).toBe(500)
+      expect(r.data).not.toHaveProperty('paymentChannel')
+      expect(r.data).not.toHaveProperty('mtdSpend')
+    }
   })
 
   it('accepts a missing merchantName (optional)', () => {
@@ -49,11 +52,6 @@ describe('validateCalculateInput', () => {
     const r = validateCalculateInput({ ...valid, merchantCategory: '' })
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.error).toMatch(/merchantCategory/)
-  })
-
-  it('rejects missing paymentChannel', () => {
-    const r = validateCalculateInput({ ...valid, paymentChannel: '' })
-    expect(r.ok).toBe(false)
   })
 
   it('rejects a malformed transactionDate', () => {

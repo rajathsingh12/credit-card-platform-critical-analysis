@@ -3,7 +3,6 @@ export type CalculateRequest = {
   amountRupees: number
   merchantName: string
   merchantCategory: string
-  paymentChannel: string
   transactionDate: string
 }
 
@@ -18,8 +17,6 @@ export function validateCalculateInput(
     return { ok: false, error: 'amountRupees must be a positive number' }
   if (!b.merchantCategory || typeof b.merchantCategory !== 'string')
     return { ok: false, error: 'merchantCategory is required' }
-  if (!b.paymentChannel || typeof b.paymentChannel !== 'string')
-    return { ok: false, error: 'paymentChannel is required' }
   if (
     !b.transactionDate ||
     typeof b.transactionDate !== 'string' ||
@@ -34,7 +31,6 @@ export function validateCalculateInput(
       amountRupees: b.amountRupees,
       merchantName: typeof b.merchantName === 'string' ? b.merchantName : '',
       merchantCategory: b.merchantCategory,
-      paymentChannel: b.paymentChannel,
       transactionDate: b.transactionDate,
     },
   }

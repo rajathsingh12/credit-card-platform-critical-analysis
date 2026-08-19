@@ -21,13 +21,6 @@ const CATEGORIES = [
   { value: 'other', label: 'Other' },
 ]
 
-const CHANNELS = [
-  { value: 'online', label: 'Online' },
-  { value: 'contactless', label: 'Contactless / Tap' },
-  { value: 'chip-and-pin', label: 'Chip & PIN' },
-  { value: 'swipe', label: 'Swipe (Magnetic Stripe)' },
-]
-
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10)
 }
@@ -359,9 +352,7 @@ export default function HomeClient() {
   const [amountRupees, setAmountRupees] = useState('')
   const [merchantName, setMerchantName] = useState('')
   const [merchantCategory, setMerchantCategory] = useState('dining')
-  const [paymentChannel, setPaymentChannel] = useState('online')
   const [transactionDate, setTransactionDate] = useState(todayIso())
-  const [mtdSpend, setMtdSpend] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [results, setResults] = useState<CardResult[]>([])
@@ -399,7 +390,7 @@ export default function HomeClient() {
           const res = await fetch('/api/calculate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cardId, amountRupees: amount, merchantName, merchantCategory, paymentChannel, transactionDate }),
+            body: JSON.stringify({ cardId, amountRupees: amount, merchantName, merchantCategory, transactionDate }),
           })
           const data = await res.json()
           if (!res.ok) throw new Error(data.error ?? 'Calculation failed')
@@ -466,25 +457,11 @@ export default function HomeClient() {
             onChange={e => setMerchantName(e.target.value)} placeholder="e.g. Swiggy" />
         </div>
 
-        <div style={s.row} className="form-row">
-          <div style={s.field}>
-            <label style={s.label} htmlFor="category">Merchant category</label>
-            <select id="category" style={s.input} value={merchantCategory} onChange={e => setMerchantCategory(e.target.value)} required>
-              {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-            </select>
-          </div>
-          <div style={s.field}>
-            <label style={s.label} htmlFor="channel">Payment channel</label>
-            <select id="channel" style={s.input} value={paymentChannel} onChange={e => setPaymentChannel(e.target.value)} required>
-              {CHANNELS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-            </select>
-          </div>
-        </div>
-
         <div style={s.field}>
-          <label style={s.label} htmlFor="mtd">Month-to-date spend (₹, informational)</label>
-          <input id="mtd" type="number" min="0" step="0.01" style={s.input} value={mtdSpend}
-            onChange={e => setMtdSpend(e.target.value)} placeholder="e.g. 15000" />
+          <label style={s.label} htmlFor="category">Merchant category</label>
+          <select id="category" style={s.input} value={merchantCategory} onChange={e => setMerchantCategory(e.target.value)} required>
+            {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+          </select>
         </div>
 
         <button type="submit" style={canSubmit ? s.button : s.buttonDisabled} disabled={!canSubmit}>
