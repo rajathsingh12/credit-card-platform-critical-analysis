@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { pool } from '@/db/client'
 import { validateEvidence, EVIDENCE_STATUSES, type EvidenceStatus } from '@/catalog/evidence'
+import { isPendingLead } from '@/admin/gate'
 
 export const runtime = 'nodejs'
 
@@ -29,7 +30,7 @@ export async function POST(
   )
   const lead = leadRes.rows[0]
   if (!lead) return NextResponse.json({ error: 'lead not found' }, { status: 404 })
-  if (lead.status !== 'pending') {
+  if (!isPendingLead(lead)) {
     return NextResponse.json({ error: `lead is ${lead.status}, not pending` }, { status: 422 })
   }
 

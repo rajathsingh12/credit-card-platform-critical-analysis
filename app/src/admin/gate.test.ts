@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest'
-import { validateLeadForApproval, validateLeadForRejection } from './gate'
+import { isPendingLead, validateLeadForApproval, validateLeadForRejection } from './gate'
+
+describe('isPendingLead', () => {
+  it('returns true only for a pending lead', () => {
+    expect(isPendingLead({ status: 'pending' })).toBe(true)
+    expect(isPendingLead({ status: 'approved' })).toBe(false)
+    expect(isPendingLead({ status: 'rejected' })).toBe(false)
+  })
+})
 
 describe('validateLeadForApproval', () => {
   it('returns ok for a pending lead with verification attached', () => {

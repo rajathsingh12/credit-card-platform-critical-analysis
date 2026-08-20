@@ -19,6 +19,8 @@ export async function POST(
   const body = await request.json().catch(() => null)
   const { effectiveFrom } = body ?? {}
 
+  // publishLead's transaction owns all lead preconditions (pending status included),
+  // so non-pending leads fail here with lead-not-approvable → 422 via STATUS_BY_CODE.
   const result = await publishLead(pool, id, effectiveFrom)
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: STATUS_BY_CODE[result.code] })

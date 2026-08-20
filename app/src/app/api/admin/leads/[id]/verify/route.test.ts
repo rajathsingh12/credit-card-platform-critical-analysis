@@ -108,4 +108,13 @@ describe('POST /api/admin/leads/[id]/verify', () => {
     const res = await callPost({ evidenceStatus: 'statement-verified' })
     expect(res.status).toBe(404)
   })
+
+  it('rejects a non-pending lead with 422 via the gate', async () => {
+    withLead({ status: 'approved' })
+    const res = await callPost({ evidenceStatus: 'statement-verified' })
+    expect(res.status).toBe(422)
+    const body = await res.json()
+    expect(body.error).toContain('not pending')
+    expect(queries.some((q) => q.includes('INSERT INTO verification_records'))).toBe(false)
+  })
 })
