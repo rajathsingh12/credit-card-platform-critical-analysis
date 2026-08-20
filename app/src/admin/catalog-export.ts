@@ -1,5 +1,5 @@
 import type { Pool } from 'pg'
-import { toIsoDate } from '../catalog/db-mapping'
+import { mapDateRange } from '../catalog/db-mapping'
 
 export type CatalogRuleVersion = {
   id: string
@@ -100,8 +100,7 @@ export function assembleCatalog(rvRows: RvRow[], rsRows: RsRow[], now: Date): Ca
     // card was inserted in the if-block above, so the get is always defined
     cardMap.get(row.card_id)!.ruleVersions.push({
       id: row.rv_id,
-      effectiveFrom: toIsoDate(row.rv_effective_from),
-      effectiveTo: row.rv_effective_to === null ? null : toIsoDate(row.rv_effective_to),
+      ...mapDateRange(row.rv_effective_from, row.rv_effective_to),
       evidenceStatus: row.evidence_status,
       ruleData: row.rv_rule_data,
       redemptionScenarios: [],
@@ -118,8 +117,7 @@ export function assembleCatalog(rvRows: RvRow[], rsRows: RsRow[], now: Date): Ca
       redemptionType: row.redemption_type,
       applicableCategories: row.applicable_categories,
       centsPerPoint: Number(row.cents_per_point),
-      effectiveFrom: toIsoDate(row.effective_from),
-      effectiveTo: row.effective_to === null ? null : toIsoDate(row.effective_to),
+      ...mapDateRange(row.effective_from, row.effective_to),
     })
   }
 

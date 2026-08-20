@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { toIsoDate, toEngineRuleVersion, toEngineScenario } from './db-mapping'
+import { toIsoDate, mapDateRange, toEngineRuleVersion, toEngineScenario } from './db-mapping'
 
 describe('toIsoDate', () => {
   it('keeps a plain date string', () => {
@@ -17,6 +17,22 @@ describe('toIsoDate', () => {
 
   it('pads single-digit months and days', () => {
     expect(toIsoDate(new Date(2025, 8, 5))).toBe('2025-09-05')
+  })
+})
+
+describe('mapDateRange', () => {
+  it('coerces both bounds and keeps a null effectiveTo as null', () => {
+    expect(mapDateRange(new Date(2025, 0, 1), null)).toEqual({
+      effectiveFrom: '2025-01-01',
+      effectiveTo: null,
+    })
+  })
+
+  it('coerces a closed upper bound to an ISO date', () => {
+    expect(mapDateRange('2024-01-01', new Date(2024, 11, 31))).toEqual({
+      effectiveFrom: '2024-01-01',
+      effectiveTo: '2024-12-31',
+    })
   })
 })
 

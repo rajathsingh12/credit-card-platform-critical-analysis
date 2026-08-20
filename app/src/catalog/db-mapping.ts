@@ -31,12 +31,24 @@ export function toIsoDate(value: string | Date): string {
   return `${year}-${month}-${day}`
 }
 
+// The effective-window pair (inclusive from, nullable to) is mapped the same way everywhere a
+// DB row becomes a typed object. Centralize the null-coerce so the date shape can't drift
+// between the engine mappers, the catalog export, and any future caller.
+export function mapDateRange(
+  effectiveFrom: string | Date,
+  effectiveTo: string | Date | null,
+): { effectiveFrom: string; effectiveTo: string | null } {
+  return {
+    effectiveFrom: toIsoDate(effectiveFrom),
+    effectiveTo: effectiveTo === null ? null : toIsoDate(effectiveTo),
+  }
+}
+
 export function toEngineRuleVersion(row: RuleVersionRow): RuleVersion {
   return {
     id: row.id,
     cardId: row.card_id,
-    effectiveFrom: toIsoDate(row.effective_from),
-    effectiveTo: row.effective_to === null ? null : toIsoDate(row.effective_to),
+    ...mapDateRange(row.effective_from, row.effective_to),
     ruleData: row.rule_data,
   }
 }
@@ -52,8 +64,7 @@ export function toEngineScenario(row: RedemptionScenarioRow): RedemptionScenario
     cardId: row.card_id,
     redemptionType: row.redemption_type,
     applicableCategories: row.applicable_categories,
-    effectiveFrom: toIsoDate(row.effective_from),
-    effectiveTo: row.effective_to === null ? null : toIsoDate(row.effective_to),
+    ...mapDateRange(row.effective_from, row.effective_to),
     centsPerPoint,
     annualFeeCents: row.annual_fee_cents,
   }
