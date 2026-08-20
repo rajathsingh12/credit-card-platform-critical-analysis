@@ -1,22 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { BETA_COOKIE } from '@/beta/invite'
-import { isValidEventName } from '@/telemetry/events'
+import { isValidEventName, CLIENT_EVENT_NAMES } from '@/telemetry/events'
 import { logEvent } from '@/telemetry/events-db'
 
 export const runtime = 'nodejs'
-
-const CLIENT_ALLOWED = new Set([
-  'decision_completed',
-  'session_repeat',
-  'unresolved_outcome_shown',
-  'contextual_report_submitted',
-])
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null)
   const { eventName, payload } = body ?? {}
 
-  if (!isValidEventName(eventName) || !CLIENT_ALLOWED.has(eventName)) {
+  if (!isValidEventName(eventName) || !CLIENT_EVENT_NAMES.has(eventName)) {
     return NextResponse.json({ error: 'invalid eventName' }, { status: 400 })
   }
 
