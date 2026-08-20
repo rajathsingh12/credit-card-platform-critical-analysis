@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import type { CalcResult, TraceEntry } from '@/engine/types'
+import type { EvidenceStatus } from '@/catalog/evidence'
 
 type CardOption = { id: string; name: string; issuer: string; rewardCurrency: string }
 type RuleMeta = { evidenceStatus: string; sourceDate: string; retractedAt?: string | null }
@@ -25,8 +26,6 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
-type EvidenceStatus = 'officially-documented' | 'statement-verified' | 'inferred' | 'community-reported'
-
 const EVIDENCE_COLORS: Record<EvidenceStatus, { background: string; color: string }> = {
   'officially-documented': { background: '#d4edda', color: '#155724' },
   'statement-verified': { background: '#cce5ff', color: '#004085' },
@@ -43,7 +42,6 @@ const s: Record<string, React.CSSProperties> = {
   input: { display: 'block', width: '100%', boxSizing: 'border-box', padding: '0.5rem 0.625rem', fontSize: '0.9375rem', border: '1px solid #ccc', borderRadius: 6, background: '#fff' },
   row: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' },
   button: { marginTop: '0.5rem', width: '100%', padding: '0.65rem 1rem', fontSize: '1rem', fontWeight: 600, background: '#1a1a1a', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' },
-  buttonDisabled: { marginTop: '0.5rem', width: '100%', padding: '0.65rem 1rem', fontSize: '1rem', fontWeight: 600, background: '#888', color: '#fff', border: 'none', borderRadius: 6, cursor: 'not-allowed' },
   error: { marginTop: '1rem', padding: '0.75rem', background: '#fff0f0', border: '1px solid #f5c6c6', borderRadius: 6, fontSize: '0.875rem', color: '#b00' },
   badge: { display: 'inline-block', padding: '0.15rem 0.5rem', borderRadius: 4, fontSize: '0.75rem', fontWeight: 700 },
   cardList: { display: 'flex', flexDirection: 'column', gap: '0.4rem', maxHeight: 200, overflowY: 'auto', padding: '0.5rem', border: '1px solid #ccc', borderRadius: 6, background: '#fafafa' },
@@ -79,9 +77,10 @@ const s: Record<string, React.CSSProperties> = {
   reportTextarea: { width: '100%', boxSizing: 'border-box', fontSize: '0.8125rem', padding: '0.4rem', border: '1px solid #ccc', borderRadius: 4, resize: 'vertical' as const, minHeight: 60 },
   reportInput: { width: '100%', boxSizing: 'border-box', fontSize: '0.8125rem', padding: '0.3rem 0.4rem', border: '1px solid #ccc', borderRadius: 4 },
   reportSubmit: { alignSelf: 'flex-start', fontSize: '0.8125rem', padding: '0.3rem 0.75rem', background: '#1a1a1a', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' },
-  reportSubmitDisabled: { alignSelf: 'flex-start', fontSize: '0.8125rem', padding: '0.3rem 0.75rem', background: '#888', color: '#fff', border: 'none', borderRadius: 4, cursor: 'not-allowed' },
   reportSuccess: { fontSize: '0.75rem', color: '#155724', background: '#d4edda', borderRadius: 4, padding: '0.3rem 0.5rem' },
 }
+
+const disabledOverride: React.CSSProperties = { background: '#888', cursor: 'not-allowed' }
 
 function formatPaise(paise: number | null): string {
   if (paise === null) return '—'
@@ -147,7 +146,7 @@ function ReportForm({ cardId, ruleVersionId }: { cardId: string; ruleVersionId: 
           />
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
             <button
-              style={submitting || !description.trim() ? s.reportSubmitDisabled : s.reportSubmit}
+              style={submitting || !description.trim() ? { ...s.reportSubmit, ...disabledOverride } : s.reportSubmit}
               type="submit"
               disabled={submitting || !description.trim()}
             >
@@ -464,7 +463,7 @@ export default function HomeClient() {
           </select>
         </div>
 
-        <button type="submit" style={canSubmit ? s.button : s.buttonDisabled} disabled={!canSubmit}>
+        <button type="submit" style={{ ...s.button, ...(canSubmit ? {} : disabledOverride) }} disabled={!canSubmit}>
           {submitting ? 'Calculating…' : `Compare ${selectedIds.size > 1 ? `${selectedIds.size} cards` : 'card'}`}
         </button>
       </form>
