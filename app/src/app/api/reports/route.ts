@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { pool } from '@/db/client'
+import { withTransaction } from '@/db/transaction'
 import { BETA_COOKIE } from '@/beta/invite'
 import { logEvent } from '@/telemetry/events-db'
 
@@ -16,14 +17,10 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const client = await pool.connect()
-  try {
-    await client.query('BEGIN')
-
+  return withTransaction(pool, async (client) => {
     // Verify the card exists.
     const cardCheck = await client.query(`SELECT id FROM cards WHERE id = $1`, [cardId])
     if (cardCheck.rows.length === 0) {
-      await client.query('ROLLBACK')
       return NextResponse.json({ error: 'card not found' }, { status: 404 })
     }
 
@@ -65,17 +62,11 @@ export async function POST(request: NextRequest) {
       ]
     )
 
-    await client.query('COMMIT')
     const row = reportRes.rows[0]
     const sessionToken = request.cookies.get(BETA_COOKIE)?.value
     if (sessionToken) {
       void logEvent({ eventName: 'contextual_report_submitted', sessionToken, payload: { cardId, reportId: row.id } }).catch(() => {})
     }
     return NextResponse.json({ reportId: row.id, dataLeadId, createdAt: row.created_at }, { status: 201 })
-  } catch (err) {
-    await client.query('ROLLBACK')
-    throw err
-  } finally {
-    client.release()
-  }
+  })
 }

@@ -1,10 +1,17 @@
 import type { Pool } from 'pg'
+import { withTransaction } from '../db/transaction'
 
 export type RetractionFailureCode = 'not-found' | 'already-retracted' | 'invalid-reason'
 
 export type RetractionResult =
   | { ok: true; correctionHistoryId: string; retractedAt: string; cardId: string }
   | { ok: false; code: RetractionFailureCode; error: string }
+
+class RetractionAbort extends Error {
+  constructor(public readonly result: Extract<RetractionResult, { ok: false }>) {
+    super(result.error)
+  }
+}
 
 export function validateRetractionReason(
   reason: unknown
@@ -37,10 +44,7 @@ export async function retractRuleVersion(
     return { ok: false, code: 'invalid-reason', error: reasonCheck.error }
   }
 
-  const client = await pool.connect()
-  try {
-    await client.query('BEGIN')
-
+  return withTransaction(pool, async (client): Promise<RetractionResult> => {
     const rvRes = await client.query(
       `SELECT id, card_id, retracted_at FROM rule_versions WHERE id = $1 FOR UPDATE`,
       [ruleVersionId]
@@ -49,8 +53,7 @@ export async function retractRuleVersion(
 
     const check = validateRuleVersionForRetraction(rv)
     if (!check.ok) {
-      await client.query('ROLLBACK')
-      return { ok: false, code: check.code, error: check.error }
+      throw new RetractionAbort({ ok: false, code: check.code, error: check.error })
     }
 
     const now = new Date()
@@ -72,7 +75,6 @@ export async function retractRuleVersion(
       [ruleVersionId, rv.card_id, reason.trim(), now.toISOString()]
     )
 
-    await client.query('COMMIT')
     const row = chRes.rows[0]
     return {
       ok: true,
@@ -80,10 +82,8 @@ export async function retractRuleVersion(
       retractedAt: new Date(row.retracted_at).toISOString(),
       cardId: rv.card_id,
     }
-  } catch (err) {
-    await client.query('ROLLBACK')
+  }).catch((err) => {
+    if (err instanceof RetractionAbort) return err.result
     throw err
-  } finally {
-    client.release()
-  }
+  })
 }

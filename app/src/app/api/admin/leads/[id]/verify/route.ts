@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { pool } from '@/db/client'
+import { withTransaction } from '@/db/transaction'
 import { validateEvidence, EVIDENCE_STATUSES, type EvidenceStatus } from '@/catalog/evidence'
 import { isPendingLead } from '@/admin/gate'
 
@@ -43,10 +44,7 @@ export async function POST(
     return NextResponse.json({ error: evidence.error }, { status: 422 })
   }
 
-  const client = await pool.connect()
-  try {
-    await client.query('BEGIN')
-
+  return withTransaction(pool, async (client) => {
     const sourceRes = await client.query(
       `INSERT INTO sources (name, url) VALUES ($1, $2) RETURNING id`,
       [lead.source_url, lead.source_url]
@@ -66,12 +64,6 @@ export async function POST(
       [vr.id, id]
     )
 
-    await client.query('COMMIT')
     return NextResponse.json({ verificationRecord: vr }, { status: 201 })
-  } catch (err) {
-    await client.query('ROLLBACK')
-    throw err
-  } finally {
-    client.release()
-  }
+  })
 }

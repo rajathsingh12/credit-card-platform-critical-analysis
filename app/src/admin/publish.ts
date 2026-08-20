@@ -1,4 +1,5 @@
 import type { Pool } from 'pg'
+import { withTransaction } from '../db/transaction'
 import { validateLeadForApproval } from './gate'
 import { isPublishable, EVIDENCE_STATUSES, type EvidenceStatus } from '../catalog/evidence'
 
@@ -19,6 +20,12 @@ export type PublishFailureCode =
 export type PublishResult =
   | { ok: true; ruleVersion: PublishedRuleVersion }
   | { ok: false; code: PublishFailureCode; error: string }
+
+class PublishAbort extends Error {
+  constructor(public readonly result: Extract<PublishResult, { ok: false }>) {
+    super(result.error)
+  }
+}
 
 type Validation = { ok: true } | { ok: false; error: string }
 
@@ -68,10 +75,7 @@ export async function publishLead(
     return { ok: false, code: 'invalid-effective-from', error: dateCheck.error }
   }
 
-  const client = await pool.connect()
-  try {
-    await client.query('BEGIN')
-
+  return withTransaction(pool, async (client): Promise<PublishResult> => {
     const leadRes = await client.query(
       `SELECT dl.id, dl.card_id, dl.proposed_rule_data, dl.verification_record_id, dl.status,
               vr.evidence_status
@@ -83,20 +87,17 @@ export async function publishLead(
     )
     const lead = leadRes.rows[0]
     if (!lead) {
-      await client.query('ROLLBACK')
-      return { ok: false, code: 'lead-not-found', error: 'lead not found' }
+      throw new PublishAbort({ ok: false, code: 'lead-not-found', error: 'lead not found' })
     }
 
     const structural = validateLeadForApproval(lead)
     if (!structural.ok) {
-      await client.query('ROLLBACK')
-      return { ok: false, code: 'lead-not-approvable', error: structural.error }
+      throw new PublishAbort({ ok: false, code: 'lead-not-approvable', error: structural.error })
     }
 
     const evidence = validateEvidenceStandard(lead.evidence_status)
     if (!evidence.ok) {
-      await client.query('ROLLBACK')
-      return { ok: false, code: 'evidence-below-standard', error: evidence.error }
+      throw new PublishAbort({ ok: false, code: 'evidence-below-standard', error: evidence.error })
     }
 
     // Close the current active version (effective_to NULL → day before new version starts).
@@ -119,12 +120,9 @@ export async function publishLead(
       [leadId]
     )
 
-    await client.query('COMMIT')
     return { ok: true, ruleVersion: rvRes.rows[0] as PublishedRuleVersion }
-  } catch (err) {
-    await client.query('ROLLBACK')
+  }).catch((err) => {
+    if (err instanceof PublishAbort) return err.result
     throw err
-  } finally {
-    client.release()
-  }
+  })
 }
