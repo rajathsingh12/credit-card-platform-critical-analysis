@@ -1,8 +1,10 @@
 import type { Pool } from 'pg'
 
+export type RetractionFailureCode = 'not-found' | 'already-retracted' | 'invalid-reason'
+
 export type RetractionResult =
   | { ok: true; correctionHistoryId: string; retractedAt: string; cardId: string }
-  | { ok: false; code: 'not-found' | 'already-retracted' | 'invalid-reason'; error: string }
+  | { ok: false; code: RetractionFailureCode; error: string }
 
 export function validateRetractionReason(
   reason: unknown
@@ -15,7 +17,7 @@ export function validateRetractionReason(
 
 export function validateRuleVersionForRetraction(
   rv: { retracted_at: string | null } | null
-): { ok: true } | { ok: false; code: 'not-found' | 'already-retracted'; error: string } {
+): { ok: true } | { ok: false; code: Extract<RetractionFailureCode, 'not-found' | 'already-retracted'>; error: string } {
   if (rv === null) {
     return { ok: false, code: 'not-found', error: 'rule version not found' }
   }

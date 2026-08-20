@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { pool } from '@/db/client'
-import { retractRuleVersion } from '@/admin/retract'
+import { retractRuleVersion, type RetractionFailureCode } from '@/admin/retract'
 import { logEvent } from '@/telemetry/events-db'
 
 export const runtime = 'nodejs'
+
+const STATUS_BY_CODE: Record<RetractionFailureCode, number> = {
+  'not-found': 404,
+  'already-retracted': 409,
+  'invalid-reason': 400,
+}
 
 export async function POST(
   request: NextRequest,
@@ -16,8 +22,7 @@ export async function POST(
   const result = await retractRuleVersion(pool, id, reason)
 
   if (!result.ok) {
-    const status = result.code === 'not-found' ? 404 : result.code === 'already-retracted' ? 409 : 400
-    return NextResponse.json({ error: result.error }, { status })
+    return NextResponse.json({ error: result.error }, { status: STATUS_BY_CODE[result.code] })
   }
 
   void logEvent({ eventName: 'correction_retracted', payload: { ruleVersionId: id, cardId: result.cardId } }).catch(() => {})
