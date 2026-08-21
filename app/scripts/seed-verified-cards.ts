@@ -19,6 +19,7 @@ import {
 } from '../src/catalog/verified-card-set'
 import { classifyFeeBand, validateEvidence } from '../src/catalog/evidence'
 import { publishLead } from '../src/admin/publish'
+import { withTransaction } from '../src/db/transaction'
 
 const approve = process.argv.includes('--approve')
 
@@ -154,9 +155,7 @@ async function prepare(pool: Pool) {
   let leadsExisting = 0
   let scenarios = 0
 
-  const client = await pool.connect()
-  try {
-    await client.query('BEGIN')
+  await withTransaction(pool, async (client) => {
     for (const spec of ALL_SEED_CARDS) {
       const cardId = await upsertCard(client, spec)
       const sourceId = await upsertSource(client, spec)
@@ -169,13 +168,7 @@ async function prepare(pool: Pool) {
       }
       scenarios += await upsertRedemptionScenarios(client, spec, cardId)
     }
-    await client.query('COMMIT')
-  } catch (err) {
-    await client.query('ROLLBACK')
-    throw err
-  } finally {
-    client.release()
-  }
+  })
 
   console.log(`Prepared ${ALL_SEED_CARDS.length} cards with provenance.`)
   console.log(`  Data Leads created: ${leadsCreated} (already present: ${leadsExisting})`)
