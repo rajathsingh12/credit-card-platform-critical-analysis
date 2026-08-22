@@ -157,28 +157,32 @@ function useRefresh<T>(token: string, url: string): {
   error: string | null
   refresh: () => void
 } {
-  const [data, setData] = useState<T | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [settled, setSettled] = useState<{ key: string; data: T | null; error: string | null }>({
+    key: '', data: null, error: null,
+  })
   const [nonce, setNonce] = useState(0)
 
+  const key = JSON.stringify([nonce, token, url])
   const refresh = useCallback(() => setNonce(n => n + 1), [])
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
-    setError(null)
-    adminFetch<T>(url, token)
-      .then(res => {
-        if (cancelled) return
-        if (res.ok) setData(res.value)
-        else setError(res.error.message)
-      })
-      .finally(() => { if (!cancelled) setLoading(false) })
+    adminFetch<T>(url, token).then(res => {
+      if (cancelled) return
+      setSettled(prev => res.ok
+        ? { key, data: res.value, error: null }
+        : { key, data: prev.data, error: res.error.message })
+    })
     return () => { cancelled = true }
-  }, [token, url, nonce])
+  }, [token, url, key])
 
-  return { data, loading, error, refresh }
+  const current = settled.key === key
+  return {
+    data: settled.data,
+    loading: !current,
+    error: current ? settled.error : null,
+    refresh,
+  }
 }
 
 function LeadsSection({ token }: { token: string }) {
@@ -341,15 +345,12 @@ function RetractionSection({ token }: { token: string }) {
     )
   }, [data])
 
-  const [selectedId, setSelectedId] = useState<string>('')
+  const [selectedOverride, setSelectedOverride] = useState<string | null>(null)
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<{ kind: 'error' | 'success'; message: string } | null>(null)
 
-  useEffect(() => {
-    if (!selectedId && versions.length > 0) setSelectedId(versions[0].rv.id)
-  }, [versions, selectedId])
-
+  const selectedId = selectedOverride ?? versions[0]?.rv.id ?? ''
   const selected = versions.find(v => v.rv.id === selectedId)
 
   async function callRetract() {
@@ -387,7 +388,7 @@ function RetractionSection({ token }: { token: string }) {
         <>
           <div style={s.field}>
             <label style={s.label} htmlFor="rv-select">Rule Version</label>
-            <select id="rv-select" style={s.select} value={selectedId} onChange={e => setSelectedId(e.target.value)}>
+            <select id="rv-select" style={s.select} value={selectedId} onChange={e => setSelectedOverride(e.target.value)}>
               {versions.map(({ rv, card }) => {
                 const label = `${card.name} (${card.issuer}) — effective ${rv.effectiveFrom}${rv.effectiveTo ? ` to ${rv.effectiveTo}` : ' (open)'} [${rv.id}]`
                 return (

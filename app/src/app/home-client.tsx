@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import type { CalcResult, TraceEntry } from '@/engine/types'
 import type { EvidenceStatus } from '@/catalog/evidence'
 
@@ -94,6 +94,7 @@ function EvidenceBadge({ status }: { status: string | undefined }) {
 }
 
 function ReportForm({ cardId, ruleVersionId }: { cardId: string; ruleVersionId: string }) {
+  const descriptionId = useId()
   const [open, setOpen] = useState(false)
   const [description, setDescription] = useState('')
   const [sourceUrl, setSourceUrl] = useState('')
@@ -129,8 +130,9 @@ function ReportForm({ cardId, ruleVersionId }: { cardId: string; ruleVersionId: 
       )}
       {open && (
         <form style={s.reportForm} onSubmit={submit}>
-          <label style={{ ...s.label, marginBottom: 0 }}>Describe the issue</label>
+          <label style={{ ...s.label, marginBottom: 0 }} htmlFor={descriptionId}>Describe the issue</label>
           <textarea
+            id={descriptionId}
             style={s.reportTextarea}
             value={description}
             onChange={e => setDescription(e.target.value)}
@@ -339,7 +341,7 @@ function CorrectionHistorySection() {
   )
 }
 
-function toggleItem(set: Set<string>, key: string): Set<string> {
+export function toggleItem(set: Set<string>, key: string): Set<string> {
   const next = new Set(set)
   if (next.has(key)) next.delete(key)
   else next.add(key)
@@ -347,6 +349,7 @@ function toggleItem(set: Set<string>, key: string): Set<string> {
 }
 
 export default function HomeClient() {
+  const cardsGroupId = useId()
   const [cards, setCards] = useState<CardOption[]>([])
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [amountRupees, setAmountRupees] = useState('')
@@ -416,8 +419,8 @@ export default function HomeClient() {
       <p style={s.sub}>Compare rewards across cards for a single transaction — no login required.</p>
 
       <form onSubmit={handleSubmit} noValidate>
-        <div style={s.field}>
-          <label style={s.label}>Cards to compare</label>
+        <div style={s.field} role="group" aria-labelledby={cardsGroupId}>
+          <span id={cardsGroupId} style={s.label}>Cards to compare</span>
           {!ready && <div style={{ ...s.input, color: '#888' }}>Loading cards…</div>}
           {ready && (
             <>

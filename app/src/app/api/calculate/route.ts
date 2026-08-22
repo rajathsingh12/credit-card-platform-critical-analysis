@@ -7,9 +7,6 @@ import { validateCalculateInput } from './validate'
 import { BETA_COOKIE } from '@/beta/invite'
 import { logEvent, sessionDecisionCount } from '@/telemetry/events-db'
 
-export { validateCalculateInput } from './validate'
-export type { CalculateRequest } from './validate'
-
 export const runtime = 'nodejs'
 
 export async function POST(request: NextRequest) {
