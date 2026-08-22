@@ -13,7 +13,7 @@
     "seed": "tsx scripts/seed-verified-cards.ts",
     "verify:seed": "tsx scripts/verify-seed.ts",
     "dev:setup": "docker compose up -d postgres && sleep 2 && npm run migrate",
-    "lint": "next lint"
+    "lint": "eslint"
   },
   "dependencies": {
     "drizzle-orm": "^0.36.0",
@@ -32,6 +32,7 @@
     "eslint": "^10.8.1",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
+    "typescript-eslint": "^8.67.0",
     "vitest": "^2.1.0"
   }
 }

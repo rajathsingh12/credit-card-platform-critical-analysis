@@ -11,7 +11,7 @@ describe('checkDb', () => {
   beforeEach(() => vi.clearAllMocks())
 
   it('returns true when the database is reachable', async () => {
-    vi.mocked(pool.query).mockResolvedValueOnce(undefined as any)
+    vi.mocked(pool.query).mockResolvedValueOnce(undefined as never)
     expect(await checkDb()).toBe(true)
   })
 
