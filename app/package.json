@@ -12,6 +12,9 @@
     "migrate": "tsx scripts/migrate.ts",
     "seed": "tsx scripts/seed-verified-cards.ts",
     "verify:seed": "tsx scripts/verify-seed.ts",
+    "seed:invites": "tsx scripts/seed-invites.ts",
+    "up": "docker compose up --build -d",
+    "down": "docker compose down",
     "dev:setup": "docker compose up -d postgres && sleep 2 && npm run migrate",
     "lint": "eslint"
   },
