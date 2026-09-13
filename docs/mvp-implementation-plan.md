@@ -63,7 +63,7 @@ Exit criteria: the Data Steward can trace every public result to evidence and ca
 - Audit representative calculations continuously against the golden dataset and observed evidence.
 - Collect B2B requirements without building a self-serve API.
 
-Phase Gate: at least 50% of beta cardholders complete three or more decisions within 30 days; no open Critical Calculation Errors; two formally scoped Data Customer pilots; and at least one paid conversion commitment.
+Phase Gate: see [ADR 0004 — Phase-4 Gate Redraw](adr/0004-phase-4-gate-redraw.md). The original criteria (50% cardholder engagement, no Critical Calculation Errors, two Data Customer pilots, one paid conversion) were redrawn because Data Customer pilots and Consumer Subscription billing are out of MVP scope (Phase 0 gate).
 
 ## Phase 5: Managed B2B Pilot
 
