@@ -1,0 +1,476 @@
+/* Design system — Fintech Trust (docs/design/ui-prompt-pack.md, Prompt 0). */
+
+:root {
+  --color-text-primary: #0b1220;
+  --color-text-heading: #1e293b;
+  --color-text-secondary: #475569;
+  --color-text-tertiary: #64748b;
+  --color-border: #e2e8f0;
+  --color-surface: #ffffff;
+  --color-surface-sunken: #f8fafc;
+  --color-surface-muted: #f1f5f9;
+  --color-accent: #0891b2;
+  --color-accent-strong: #0e7490;
+  --color-accent-soft: #ecfeff;
+  --color-focus-ring: rgba(8, 145, 178, 0.28);
+
+  /* Evidence ramp, descending confidence 1 → 4. */
+  --color-evidence-1-text: #065f46;
+  --color-evidence-1-bg: #ecfdf5;
+  --color-evidence-1-border: #a7f3d0;
+  --color-evidence-2-text: #155e75;
+  --color-evidence-2-bg: #ecfeff;
+  --color-evidence-2-border: #a5f3fc;
+  --color-evidence-3-text: #92400e;
+  --color-evidence-3-bg: #fffbeb;
+  --color-evidence-3-border: #fde68a;
+  --color-evidence-4-text: #9f1239;
+  --color-evidence-4-bg: #fff1f2;
+  --color-evidence-4-border: #fecdd3;
+
+  /* Retracted reuses the lowest tier's hue as a solid fill: worse than any tier, unmistakably. */
+  --color-danger: #9f1239;
+  --color-danger-bg: #fff1f2;
+  --color-danger-border: #fecdd3;
+  /* Unresolved shares tier 3's palette: a caution, not a failure. */
+  --color-warning-text: #92400e;
+  --color-warning-bg: #fffbeb;
+  --color-warning-border: #fde68a;
+
+  --radius-control: 6px;
+  --radius-card: 10px;
+  --radius-badge: 999px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 28px;
+  --text-3xl: 36px;
+
+  --shadow-winner: 0 1px 2px rgba(11, 18, 32, 0.04), 0 8px 24px -12px rgba(11, 18, 32, 0.12);
+  --focus-ring: 0 0 0 3px var(--color-focus-ring);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--text-md);
+  line-height: 1.45;
+  color: var(--color-text-primary);
+  background: var(--color-surface-sunken);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, p, dl, dd, figure {
+  margin: 0;
+}
+
+button, input, select, textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+/* Ring drawn as an outline rather than the pack's box-shadow so it never clobbers the winner shadow. */
+:focus-visible {
+  outline: 3px solid var(--color-focus-ring);
+  outline-offset: 1px;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.eyebrow {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.hint {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Badges */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-badge);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.badge__glyph {
+  font-size: 11px;
+  line-height: 1;
+}
+
+.badge--evidence-1 {
+  color: var(--color-evidence-1-text);
+  background: var(--color-evidence-1-bg);
+  border-color: var(--color-evidence-1-border);
+}
+
+.badge--evidence-2 {
+  color: var(--color-evidence-2-text);
+  background: var(--color-evidence-2-bg);
+  border-color: var(--color-evidence-2-border);
+}
+
+.badge--evidence-3 {
+  color: var(--color-evidence-3-text);
+  background: var(--color-evidence-3-bg);
+  border-color: var(--color-evidence-3-border);
+}
+
+.badge--evidence-4 {
+  color: var(--color-evidence-4-text);
+  background: var(--color-evidence-4-bg);
+  border-color: var(--color-evidence-4-border);
+}
+
+.badge--retracted {
+  color: #fff;
+  background: var(--color-danger);
+  border-color: var(--color-danger);
+}
+
+.badge--winner {
+  color: #fff;
+  background: var(--color-accent-strong);
+  border-color: var(--color-accent-strong);
+}
+
+.badge--applied {
+  color: var(--color-accent-strong);
+  background: var(--color-accent-soft);
+  border-color: var(--color-evidence-2-border);
+}
+
+.badge--neutral {
+  color: var(--color-text-secondary);
+  background: var(--color-surface-muted);
+  border-color: var(--color-border);
+}
+
+.badge--unresolved {
+  color: var(--color-warning-text);
+  background: var(--color-warning-bg);
+  border-color: var(--color-warning-border);
+}
+
+.badge--beta {
+  color: var(--color-text-secondary);
+  background: var(--color-surface-muted);
+  border-color: var(--color-border);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Buttons */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 14px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  font-size: var(--text-md);
+  font-weight: 600;
+  line-height: 1.3;
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.btn--primary {
+  color: #fff;
+  background: var(--color-text-primary);
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: var(--color-text-heading);
+}
+
+.btn--primary:active:not(:disabled) {
+  background: #000;
+}
+
+.btn--secondary {
+  color: var(--color-text-primary);
+  background: var(--color-surface);
+  border-color: var(--color-border);
+}
+
+.btn--secondary:hover:not(:disabled) {
+  background: var(--color-surface-muted);
+  border-color: var(--color-text-tertiary);
+}
+
+.btn--ghost {
+  padding: var(--space-1) 6px;
+  color: var(--color-accent-strong);
+  background: transparent;
+}
+
+.btn--ghost:hover:not(:disabled) {
+  background: var(--color-accent-soft);
+}
+
+.btn--sm {
+  padding: var(--space-1) 10px;
+  font-size: var(--text-sm);
+}
+
+.btn--block {
+  width: 100%;
+}
+
+/* Fields */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.label {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text-heading);
+}
+
+.input {
+  width: 100%;
+  padding: var(--space-2) 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: var(--text-md);
+  line-height: 1.3;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.input:hover:not(:disabled) {
+  border-color: var(--color-text-tertiary);
+}
+
+.input:focus-visible {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: var(--focus-ring);
+}
+
+.input:disabled {
+  color: var(--color-text-tertiary);
+  background: var(--color-surface-muted);
+  cursor: not-allowed;
+}
+
+.input[aria-invalid="true"],
+.input:user-invalid {
+  border-color: var(--color-danger);
+}
+
+textarea.input {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.checkbox {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--color-accent-strong);
+}
+
+/* Containers — hierarchy from borders and background, not shadows. */
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+}
+
+.card--sunken {
+  background: var(--color-surface-sunken);
+}
+
+.card--winner {
+  border-color: var(--color-accent);
+  box-shadow: var(--shadow-winner);
+}
+
+.card--unresolved {
+  background: var(--color-warning-bg);
+  border-color: var(--color-warning-border);
+}
+
+.alert {
+  padding: 10px var(--space-3);
+  border: 1px solid;
+  border-radius: var(--radius-control);
+  font-size: var(--text-sm);
+}
+
+.alert--error {
+  color: var(--color-danger);
+  background: var(--color-danger-bg);
+  border-color: var(--color-danger-border);
+}
+
+.alert--success {
+  color: var(--color-evidence-1-text);
+  background: var(--color-evidence-1-bg);
+  border-color: var(--color-evidence-1-border);
+}
+
+/* Skeleton */
+
+.skeleton {
+  display: block;
+  border-radius: var(--radius-control);
+  background: linear-gradient(90deg, var(--color-surface-muted) 25%, var(--color-border) 50%, var(--color-surface-muted) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
+  .btn, .input { transition: none; }
+}
+
+/* Shared pieces (chips, corrections, report form) */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.report-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+  padding: var(--space-3);
+}
+
+.report-form__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.corrections {
+  margin-top: var(--space-6);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.corrections__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.corrections__bar .btn {
+  margin-left: auto;
+}
+
+.corrections__title {
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.corrections__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.corrections__item {
+  padding: var(--space-3);
+  font-size: var(--text-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.corrections__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}

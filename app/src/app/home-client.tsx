@@ -3,6 +3,7 @@
 import { useEffect, useId, useState } from 'react'
 import type { CalcResult, TraceEntry } from '@/engine/types'
 import type { EvidenceStatus } from '@/catalog/evidence'
+import s from './home-client.module.css'
 
 type CardOption = { id: string; name: string; issuer: string; rewardCurrency: string }
 type RuleMeta = { evidenceStatus: string; sourceDate: string; retractedAt?: string | null }
@@ -26,75 +27,98 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
-const EVIDENCE_COLORS: Record<EvidenceStatus, { background: string; color: string }> = {
-  'officially-documented': { background: '#d4edda', color: '#155724' },
-  'statement-verified': { background: '#cce5ff', color: '#004085' },
-  'inferred': { background: '#fff3cd', color: '#856404' },
-  'community-reported': { background: '#f8d7da', color: '#721c24' },
+function categoryLabel(value: string): string {
+  return CATEGORIES.find(c => c.value === value)?.label ?? value
 }
 
-const s: Record<string, React.CSSProperties> = {
-  page: { fontFamily: 'system-ui, sans-serif', maxWidth: 1100, margin: '0 auto', padding: '2rem 1rem', color: '#1a1a1a' },
-  heading: { fontSize: '1.4rem', fontWeight: 700, marginBottom: '0.25rem' },
-  sub: { fontSize: '0.875rem', color: '#555', marginBottom: '1.75rem' },
-  field: { marginBottom: '1rem' },
-  label: { display: 'block', fontSize: '0.8125rem', fontWeight: 600, marginBottom: '0.3rem' },
-  input: { display: 'block', width: '100%', boxSizing: 'border-box', padding: '0.5rem 0.625rem', fontSize: '0.9375rem', border: '1px solid #ccc', borderRadius: 6, background: '#fff' },
-  row: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' },
-  button: { marginTop: '0.5rem', width: '100%', padding: '0.65rem 1rem', fontSize: '1rem', fontWeight: 600, background: '#1a1a1a', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' },
-  error: { marginTop: '1rem', padding: '0.75rem', background: '#fff0f0', border: '1px solid #f5c6c6', borderRadius: 6, fontSize: '0.875rem', color: '#b00' },
-  badge: { display: 'inline-block', padding: '0.15rem 0.5rem', borderRadius: 4, fontSize: '0.75rem', fontWeight: 700 },
-  cardList: { display: 'flex', flexDirection: 'column', gap: '0.4rem', maxHeight: 200, overflowY: 'auto', padding: '0.5rem', border: '1px solid #ccc', borderRadius: 6, background: '#fafafa' },
-  cardCheckItem: { display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', cursor: 'pointer', userSelect: 'none' },
-  selectLinks: { display: 'flex', gap: '1rem', fontSize: '0.8125rem', marginTop: '0.35rem', alignItems: 'center' },
-  linkBtn: { color: '#1a1a1a', textDecoration: 'underline', cursor: 'pointer', background: 'none', border: 'none', padding: 0, fontSize: '0.8125rem' },
-  resultsGrid: { marginTop: '2rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem', alignItems: 'start' },
-  outcomeCard: { padding: '1rem', background: '#f8f8f8', border: '1px solid #ddd', borderRadius: 8 },
-  outcomeCardUnresolved: { background: '#fffbf0', border: '1px solid #f0d060' },
-  cardName: { fontWeight: 700, fontSize: '1rem' },
-  cardIssuer: { fontSize: '0.8125rem', color: '#555', marginBottom: '0.5rem' },
-  cardStatusRow: { marginBottom: '0.75rem', display: 'flex', gap: '0.4rem', flexWrap: 'wrap' as const },
-  metricRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.3rem 0', borderBottom: '1px solid #eee', fontSize: '0.875rem' },
-  metricLabel: { color: '#555' },
-  metricValue: { fontWeight: 600 },
-  unresolvedReason: { fontSize: '0.8125rem', color: '#856404', background: '#fff3cd', borderRadius: 4, padding: '0.4rem 0.6rem', margin: '0.5rem 0' },
-  traceToggle: { display: 'block', width: '100%', marginTop: '0.75rem', padding: '0.4rem 0.75rem', fontSize: '0.8125rem', fontWeight: 600, background: '#fff', border: '1px solid #ccc', borderRadius: 6, cursor: 'pointer', textAlign: 'left' as const },
-  traceSection: { marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' },
-  traceEntry: { padding: '0.5rem 0.6rem', background: '#fff', border: '1px solid #e0e0e0', borderRadius: 6, fontSize: '0.8125rem' },
-  traceApplied: { border: '1px solid #a8d5a2', background: '#f0faf0' },
-  traceEntryHeader: { display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' as const, marginBottom: '0.25rem' },
-  traceRuleId: { fontFamily: 'monospace', fontSize: '0.75rem', color: '#555' },
-  traceDate: { fontSize: '0.75rem', color: '#777' },
-  traceReason: { color: '#333', marginBottom: '0.2rem' },
-  tracePoints: { fontWeight: 600, marginBottom: '0.2rem' },
-  traceInputs: { color: '#666', fontSize: '0.75rem', marginBottom: '0.2rem' },
-  traceAssumptions: { color: '#555', fontStyle: 'italic', fontSize: '0.75rem', marginBottom: '0.2rem' },
-  traceMeta: { display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.25rem', flexWrap: 'wrap' as const },
-  traceMetaDate: { fontSize: '0.75rem', color: '#777' },
-  assumptionsBlock: { marginTop: '0.5rem', padding: '0.4rem 0.5rem', background: '#f5f5f5', borderRadius: 4, fontSize: '0.8125rem', color: '#555', fontStyle: 'italic' },
-  reportBtn: { marginTop: '0.5rem', fontSize: '0.75rem', color: '#555', background: 'none', border: '1px solid #ccc', borderRadius: 4, padding: '0.2rem 0.5rem', cursor: 'pointer' },
-  reportForm: { marginTop: '0.5rem', padding: '0.6rem', background: '#fffbf0', border: '1px solid #f0d060', borderRadius: 6, display: 'flex', flexDirection: 'column', gap: '0.4rem' },
-  reportTextarea: { width: '100%', boxSizing: 'border-box', fontSize: '0.8125rem', padding: '0.4rem', border: '1px solid #ccc', borderRadius: 4, resize: 'vertical' as const, minHeight: 60 },
-  reportInput: { width: '100%', boxSizing: 'border-box', fontSize: '0.8125rem', padding: '0.3rem 0.4rem', border: '1px solid #ccc', borderRadius: 4 },
-  reportSubmit: { alignSelf: 'flex-start', fontSize: '0.8125rem', padding: '0.3rem 0.75rem', background: '#1a1a1a', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' },
-  reportSuccess: { fontSize: '0.75rem', color: '#155724', background: '#d4edda', borderRadius: 4, padding: '0.3rem 0.5rem' },
-}
-
-const disabledOverride: React.CSSProperties = { background: '#888', cursor: 'not-allowed' }
+const inr = new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const inrInt = new Intl.NumberFormat('en-IN')
+const inDate = new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
 
 function formatPaise(paise: number | null): string {
   if (paise === null) return '—'
-  return `₹${(paise / 100).toFixed(2)}`
+  const sign = paise < 0 ? '−' : ''
+  return `${sign}₹${inr.format(Math.abs(paise) / 100)}`
+}
+
+function formatInt(n: number): string {
+  return inrInt.format(n)
+}
+
+function formatDate(iso: string): string {
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? iso : inDate.format(d)
+}
+
+// Net return in paise; null when unresolved or a direct (non-variable) reward.
+function netOf(r: CardResult): number | null {
+  return r.result.resolved ? r.result.netReturnCents : null
+}
+
+// Resolved by net return desc, unresolved last; shortfall is vs the winner.
+type Ranked = CardResult & { rank: number; shortfallCents: number | null }
+
+export function rankResults(results: CardResult[]): Ranked[] {
+  const resolved = results.filter(r => netOf(r) !== null)
+  const noValue = results.filter(r => r.result.resolved && netOf(r) === null)
+  const unresolved = results.filter(r => !r.result.resolved)
+  resolved.sort((a, b) => (netOf(b) ?? 0) - (netOf(a) ?? 0))
+  const best = resolved.length > 0 ? netOf(resolved[0]) : null
+  return [...resolved, ...noValue, ...unresolved].map((r, i) => ({
+    ...r,
+    rank: i + 1,
+    shortfallCents: best !== null && i > 0 && netOf(r) !== null ? (netOf(r) as number) - best : null,
+  }))
+}
+
+function appliedEntryOf(r: CardResult): TraceEntry | undefined {
+  return r.result.ruleApplied ? r.result.trace.entries.find(e => e.ruleId === r.result.ruleApplied) : undefined
+}
+
+function appliedMetaOf(r: CardResult): RuleMeta | undefined {
+  return r.result.ruleApplied ? r.ruleMeta[r.result.ruleApplied] : undefined
+}
+
+const EVIDENCE_TIER: Record<EvidenceStatus, { tier: 1 | 2 | 3 | 4; glyph: string; label: string }> = {
+  'officially-documented': { tier: 1, glyph: '●', label: 'Officially documented' },
+  'statement-verified': { tier: 2, glyph: '◕', label: 'Statement verified' },
+  'inferred': { tier: 3, glyph: '◐', label: 'Inferred' },
+  'community-reported': { tier: 4, glyph: '○', label: 'Community reported' },
 }
 
 function EvidenceBadge({ status }: { status: string | undefined }) {
   if (!status) return null
-  const c = EVIDENCE_COLORS[status as EvidenceStatus] ?? { background: '#e9ecef', color: '#333' }
-  return <span style={{ ...s.badge, ...c }}>{status.replace(/-/g, ' ')}</span>
+  const t = EVIDENCE_TIER[status as EvidenceStatus]
+  if (!t) return <span className="badge badge--neutral">{status.replace(/-/g, ' ')}</span>
+  return (
+    <span className={`badge badge--evidence-${t.tier}`} title={`Evidence tier ${t.tier} of 4`}>
+      <span className="badge__glyph" aria-hidden="true">{t.glyph}</span>
+      {t.label}
+      <span className="visually-hidden">, tier {t.tier} of 4</span>
+    </span>
+  )
+}
+
+function RetractedBadge() {
+  return <span className="badge badge--retracted">✕ Rule retracted</span>
+}
+
+function Field({
+  label, hint, children,
+}: { label: string; hint?: string; children: (id: string) => React.ReactNode }) {
+  const id = useId()
+  return (
+    <div className="field">
+      <label className="label" htmlFor={id}>{label}</label>
+      {children(id)}
+      {hint && <span className="hint">{hint}</span>}
+    </div>
+  )
 }
 
 function ReportForm({ cardId, ruleVersionId }: { cardId: string; ruleVersionId: string }) {
   const descriptionId = useId()
+  const urlId = useId()
   const [open, setOpen] = useState(false)
   const [description, setDescription] = useState('')
   const [sourceUrl, setSourceUrl] = useState('')
@@ -118,179 +142,116 @@ function ReportForm({ cardId, ruleVersionId }: { cardId: string; ruleVersionId: 
   }
 
   if (submitted) {
-    return <div style={s.reportSuccess}>Report submitted — thank you. A Data Lead has been created for review.</div>
+    return <div className="alert alert--success" role="status">Report submitted — thank you. A Data Lead has been created for review.</div>
   }
-
+  if (!open) {
+    return (
+      <button className="btn btn--ghost btn--sm" type="button" onClick={() => setOpen(true)}>
+        Report an issue with this rule
+      </button>
+    )
+  }
   return (
-    <>
-      {!open && (
-        <button style={s.reportBtn} type="button" onClick={() => setOpen(true)}>
-          Report an issue with this rule
+    <form className="card card--sunken report-form" onSubmit={submit}>
+      <div className="field">
+        <label className="label" htmlFor={descriptionId}>Describe the issue</label>
+        <textarea id={descriptionId} className="input" value={description} onChange={e => setDescription(e.target.value)}
+          placeholder="e.g. The multiplier for dining is 3x, not 5x" required />
+      </div>
+      <div className="field">
+        <label className="label" htmlFor={urlId}>Source URL (optional)</label>
+        <input id={urlId} className="input" type="url" value={sourceUrl} onChange={e => setSourceUrl(e.target.value)} placeholder="https://" />
+      </div>
+      <div className="report-form__actions">
+        <button className="btn btn--primary btn--sm" type="submit" disabled={submitting || !description.trim()}>
+          {submitting ? 'Submitting…' : 'Submit report'}
         </button>
-      )}
-      {open && (
-        <form style={s.reportForm} onSubmit={submit}>
-          <label style={{ ...s.label, marginBottom: 0 }} htmlFor={descriptionId}>Describe the issue</label>
-          <textarea
-            id={descriptionId}
-            style={s.reportTextarea}
-            value={description}
-            onChange={e => setDescription(e.target.value)}
-            placeholder="e.g. The multiplier for dining is 3x, not 5x"
-            required
-          />
-          <input
-            style={s.reportInput}
-            type="url"
-            value={sourceUrl}
-            onChange={e => setSourceUrl(e.target.value)}
-            placeholder="Source URL (optional)"
-          />
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-            <button
-              style={submitting || !description.trim() ? { ...s.reportSubmit, ...disabledOverride } : s.reportSubmit}
-              type="submit"
-              disabled={submitting || !description.trim()}
-            >
-              {submitting ? 'Submitting…' : 'Submit report'}
-            </button>
-            <button style={{ ...s.reportBtn, marginTop: 0 }} type="button" onClick={() => setOpen(false)}>
-              Cancel
-            </button>
-          </div>
-        </form>
-      )}
-    </>
+        <button className="btn btn--secondary btn--sm" type="button" onClick={() => setOpen(false)}>Cancel</button>
+      </div>
+    </form>
   )
 }
 
-function TraceSection({
-  entries, ruleMeta, cardId,
-}: {
-  entries: TraceEntry[]
-  ruleMeta: Record<string, RuleMeta>
-  cardId: string
-}) {
+function Receipt({ entries, ruleMeta, cardId }: { entries: TraceEntry[]; ruleMeta: Record<string, RuleMeta>; cardId: string }) {
   return (
-    <div style={s.traceSection}>
-      {entries.map(e => (
-        <div key={e.ruleId} style={{ ...s.traceEntry, ...(e.applied ? s.traceApplied : {}) }}>
-          <div style={s.traceEntryHeader}>
-            <span style={s.traceRuleId}>{e.ruleId}</span>
-            {e.applied && <span style={{ ...s.badge, background: '#d4edda', color: '#155724' }}>applied</span>}
-            {ruleMeta[e.ruleId]?.retractedAt && (
-              <span style={{ ...s.badge, background: '#f8d7da', color: '#721c24' }}>retracted</span>
+    <div className={`card ${s.receipt}`} aria-label="Calculation receipt">
+      <div className={`eyebrow ${s.receiptHead}`}>Calculation receipt</div>
+      {entries.map(e => {
+        const meta = ruleMeta[e.ruleId]
+        return (
+          <div key={e.ruleId} className={e.applied ? s.lineApplied : s.line}>
+            <div className={s.lineHead}>
+              <span className={`mono ${s.ruleId}`}>{e.ruleId}</span>
+              {e.applied ? <span className="badge badge--applied">✓ Applied</span> : <span className="badge badge--neutral">Skipped</span>}
+              {meta?.retractedAt && <RetractedBadge />}
+            </div>
+            <p className={s.lineReason}>{e.reason}</p>
+            <div className={s.receiptRows}>
+              <span className="hint">{categoryLabel(e.inputs.merchantCategory)}</span>
+              <span className="hint num">{e.inputs.pointsPerDollar}×</span>
+              {e.inputs.capPoints !== null && <span className="hint num">cap {formatInt(e.inputs.capPoints)}</span>}
+              {e.inputs.categories.length > 0 && <span className="hint">{e.inputs.categories.join(', ')}</span>}
+              {e.inputs.exclusions.length > 0 && <span className="hint">excl. {e.inputs.exclusions.join(', ')}</span>}
+              <span className="hint num">eff. {formatDate(e.ruleEffectiveFrom)}</span>
+              {e.pointsAfterCap !== null && (
+                <span className={`num ${e.applied ? s.linePoints : s.linePointsOff}`}>
+                  {formatInt(e.pointsAfterCap)} pts{e.pointsBeforeCap !== null && e.pointsBeforeCap !== e.pointsAfterCap ? ` (was ${formatInt(e.pointsBeforeCap)})` : ''}
+                </span>
+              )}
+            </div>
+            {e.assumptions.map((a, i) => <p key={i} className={s.assumption}>{a}</p>)}
+            {meta && (
+              <div className={s.lineMeta}>
+                <EvidenceBadge status={meta.evidenceStatus} />
+                <span className="hint num">source {formatDate(meta.sourceDate)}</span>
+              </div>
             )}
-            <span style={s.traceDate}>eff.&nbsp;{e.ruleEffectiveFrom}</span>
+            <ReportForm cardId={cardId} ruleVersionId={e.ruleId} />
           </div>
-          <div style={s.traceReason}>{e.reason}</div>
-          {e.pointsAfterCap !== null && (
-            <div style={s.tracePoints}>
-              {e.pointsAfterCap}&nbsp;pts
-              {e.pointsBeforeCap !== null && e.pointsBeforeCap !== e.pointsAfterCap
-                ? ` (uncapped: ${e.pointsBeforeCap})` : ''}
-            </div>
-          )}
-          <div style={s.traceInputs}>
-            {e.inputs.merchantCategory}&nbsp;·&nbsp;{e.inputs.pointsPerDollar}x
-            {e.inputs.capPoints !== null ? ` · cap ${e.inputs.capPoints}` : ''}
-            {e.inputs.categories.length > 0
-              ? ` · cats: ${e.inputs.categories.join(', ')}`
-              : ' · all cats'}
-            {e.inputs.exclusions.length > 0 ? ` · excl: ${e.inputs.exclusions.join(', ')}` : ''}
-          </div>
-          {e.assumptions.length > 0 && (
-            <div style={s.traceAssumptions}>
-              {e.assumptions.map((a, i) => <div key={i}>{a}</div>)}
-            </div>
-          )}
-          {ruleMeta[e.ruleId] && (
-            <div style={s.traceMeta}>
-              <EvidenceBadge status={ruleMeta[e.ruleId].evidenceStatus} />
-              <span style={s.traceMetaDate}>src&nbsp;{ruleMeta[e.ruleId].sourceDate}</span>
-            </div>
-          )}
-          <ReportForm cardId={cardId} ruleVersionId={e.ruleId} />
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
 
-function OutcomeCard({
-  cr, traceOpen, onToggleTrace,
-}: {
-  cr: CardResult; traceOpen: boolean; onToggleTrace: () => void
-}) {
-  const { card, result, ruleMeta } = cr
-  const appliedMeta = result.ruleApplied ? ruleMeta[result.ruleApplied] : undefined
-  const appliedEntry = result.ruleApplied
-    ? result.trace.entries.find(e => e.ruleId === result.ruleApplied)
-    : undefined
-  const isRetracted = !!(appliedMeta?.retractedAt)
+function BarRow({ r, pct, open, onToggle }: { r: Ranked; pct: number | null; open: boolean; onToggle: () => void }) {
+  const meta = appliedMetaOf(r)
+  const entry = appliedEntryOf(r)
+  const res = r.result
   return (
-    <div style={{ ...s.outcomeCard, ...(result.resolved ? {} : s.outcomeCardUnresolved) }}>
-      <div style={s.cardName}>{card.name}</div>
-      <div style={s.cardIssuer}>{card.issuer}</div>
-      <div style={s.cardStatusRow}>
-        <span style={{ ...s.badge, ...(result.resolved
-          ? { background: '#d4edda', color: '#155724' }
-          : { background: '#fff3cd', color: '#856404' }) }}>
-          {result.resolved ? 'Resolved' : 'Unresolved'}
-        </span>
-        {isRetracted && (
-          <span style={{ ...s.badge, background: '#f8d7da', color: '#721c24' }}>
-            rule retracted
+    <li className={s.row}>
+      <button className={`card ${s.rowBtn} ${r.rank === 1 ? s.rowWinner : ''} ${res.resolved ? '' : s.rowUnresolved}`} type="button" onClick={onToggle} aria-expanded={open}>
+        <div className={s.rowHead}>
+          {r.rank === 1 && <span className="badge badge--winner">★ Best for this spend</span>}
+          {meta?.retractedAt && <RetractedBadge />}
+          {!res.resolved && <span className="badge badge--unresolved">⚠ Unresolved</span>}
+          <span className={s.rowCard}>{r.card.name} <span className="hint">{r.card.issuer}</span></span>
+        </div>
+        {res.resolved && res.netReturnCents !== null && (
+          <span className={s.track} aria-hidden="true">
+            <span className={pct === null ? '' : s.bar} style={{ width: `${pct}%` }} />
           </span>
         )}
-      </div>
-      <div style={s.metricRow}>
-        <span style={s.metricLabel}>Rewards earned</span>
-        <span style={s.metricValue}>{result.rewardsEarned}&nbsp;pts</span>
-      </div>
-      {result.resolved && result.netReturnCents !== null && (
-        <div style={s.metricRow}>
-          <span style={s.metricLabel}>Net return</span>
-          <span style={s.metricValue}>{formatPaise(result.netReturnCents)}</span>
+        <div className={s.rowFoot}>
+          {res.resolved ? (
+            <>
+              <span className={`num ${r.rank === 1 ? s.rowNetHero : s.rowNet}`}>{formatPaise(res.netReturnCents)}</span>
+              {r.shortfallCents !== null && <span className="hint num">({formatPaise(r.shortfallCents)} vs best)</span>}
+              <span className="hint num">{formatInt(res.rewardsEarned)} pts</span>
+              {res.annualFeeAmortizedCents !== null && <span className="hint num">fee {formatPaise(res.annualFeeAmortizedCents)}</span>}
+            </>
+          ) : (
+            <span className={s.unresolvedReason}>{res.reason} · {formatInt(res.rewardsEarned)} pts, cash value unknown</span>
+          )}
+          {meta && !meta.retractedAt && <EvidenceBadge status={meta.evidenceStatus} />}
+          {meta && <span className="hint num">verified {formatDate(meta.sourceDate)}</span>}
+          {entry && <span className="hint num">eff. {formatDate(entry.ruleEffectiveFrom)}</span>}
         </div>
-      )}
-      {result.resolved && result.annualFeeAmortizedCents !== null && (
-        <div style={s.metricRow}>
-          <span style={s.metricLabel}>Annual fee (monthly)</span>
-          <span style={s.metricValue}>{formatPaise(result.annualFeeAmortizedCents)}</span>
-        </div>
-      )}
-      {!result.resolved && <div style={s.unresolvedReason}>{result.reason}</div>}
-      {appliedMeta && (
-        <div style={s.metricRow}>
-          <span style={s.metricLabel}>Evidence</span>
-          <EvidenceBadge status={appliedMeta.evidenceStatus} />
-        </div>
-      )}
-      {appliedMeta && (
-        <div style={s.metricRow}>
-          <span style={s.metricLabel}>Source verified</span>
-          <span style={s.metricValue}>{appliedMeta.sourceDate}</span>
-        </div>
-      )}
-      {appliedEntry && (
-        <div style={s.metricRow}>
-          <span style={s.metricLabel}>Rule effective from</span>
-          <span style={s.metricValue}>{appliedEntry.ruleEffectiveFrom}</span>
-        </div>
-      )}
-      {appliedEntry && appliedEntry.assumptions.length > 0 && (
-        <div style={s.assumptionsBlock}>
-          {appliedEntry.assumptions.map((a, i) => <div key={i}>{a}</div>)}
-        </div>
-      )}
-      <button style={s.traceToggle} onClick={onToggleTrace} type="button">
-        {traceOpen ? '▲' : '▼'}&nbsp;Calculation trace&nbsp;({result.trace.entries.length}&nbsp;rules)
+        {entry?.assumptions.map((a, i) => <p key={i} className={s.assumption}>{a}</p>)}
+        <span className={`hint ${s.rowToggle}`}>{open ? '▾ Hide calculation' : '▸ Show calculation'}</span>
       </button>
-      {traceOpen && (
-        <TraceSection entries={result.trace.entries} ruleMeta={ruleMeta} cardId={card.id} />
-      )}
-    </div>
+      {open && <Receipt entries={res.trace.entries} ruleMeta={r.ruleMeta} cardId={r.card.id} />}
+    </li>
   )
 }
 
@@ -317,27 +278,32 @@ function CorrectionHistorySection() {
   }
 
   return (
-    <div style={{ marginTop: '2rem', borderTop: '1px solid #e0e0e0', paddingTop: '1rem' }}>
-      <button style={s.linkBtn} type="button" onClick={open ? () => setOpen(false) : load}>
-        {open ? '▲' : '▼'}&nbsp;Correction History
-      </button>
+    <section className="corrections" aria-labelledby="corrections-heading">
+      <div className="corrections__bar">
+        <h2 id="corrections-heading" className="corrections__title">Correction History</h2>
+        <span className="hint">Publicly retracted rules, newest first</span>
+        <button className="btn btn--secondary btn--sm" type="button" aria-expanded={open} onClick={open ? () => setOpen(false) : load}>
+          {open ? 'Hide' : 'Show'}
+        </button>
+      </div>
       {open && (
-        <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          {entries.length === 0 && (
-            <p style={{ fontSize: '0.875rem', color: '#555' }}>No corrections on record.</p>
-          )}
+        <ul className="corrections__list">
+          {entries.length === 0 && <li className="hint">No corrections on record.</li>}
           {entries.map(e => (
-            <div key={e.id} style={{ padding: '0.6rem 0.75rem', background: '#fff8f0', border: '1px solid #f0c060', borderRadius: 6, fontSize: '0.8125rem' }}>
-              <div style={{ fontWeight: 600 }}>{e.card.issuer} — {e.card.name}</div>
-              <div style={{ color: '#555', marginTop: '0.2rem' }}>{e.retractionReason}</div>
-              <div style={{ color: '#888', fontSize: '0.75rem', marginTop: '0.2rem' }}>
-                Rule version {e.ruleVersionId.slice(0, 8)}… retracted {new Date(e.retractedAt).toLocaleDateString()}
+            <li key={e.id} className="card corrections__item">
+              <div className="corrections__head">
+                <RetractedBadge />
+                <strong>{e.card.issuer} — {e.card.name}</strong>
               </div>
-            </div>
+              <p>{e.retractionReason}</p>
+              <p className="hint">
+                <span className="mono">{e.ruleVersionId.slice(0, 8)}…</span> · retracted <span className="num">{formatDate(e.retractedAt)}</span>
+              </p>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
-    </div>
+    </section>
   )
 }
 
@@ -360,6 +326,7 @@ export default function HomeClient() {
   const [error, setError] = useState<string | null>(null)
   const [results, setResults] = useState<CardResult[]>([])
   const [openTraces, setOpenTraces] = useState<Set<string>>(new Set())
+  const [showAll, setShowAll] = useState(false)
 
   useEffect(() => {
     fetch('/api/cards')
@@ -412,80 +379,101 @@ export default function HomeClient() {
   const ready = cards.length > 0
   const canSubmit = ready && selectedIds.size > 0 && !submitting
 
-  return (
-    <main style={s.page}>
-      <style>{`@media (max-width: 500px) { .form-row { grid-template-columns: 1fr !important; } }`}</style>
-      <h1 style={s.heading}>Credit Card Intelligence Platform</h1>
-      <p style={s.sub}>Compare rewards across cards for a single transaction — no login required.</p>
+  const ranked = rankResults(results)
+  const best = ranked.find(r => netOf(r) !== null)
+  const bestNet = best ? netOf(best) : null
+  const visible = showAll ? ranked : ranked.slice(0, 6)
 
-      <form onSubmit={handleSubmit} noValidate>
-        <div style={s.field} role="group" aria-labelledby={cardsGroupId}>
-          <span id={cardsGroupId} style={s.label}>Cards to compare</span>
-          {!ready && <div style={{ ...s.input, color: '#888' }}>Loading cards…</div>}
-          {ready && (
+  return (
+    <main className={s.page}>
+      <header className={s.header}>
+        <h1 className={s.title}>Credit Card Intelligence <span className="badge badge--beta">Beta</span></h1>
+        <p className={s.subtitle}>Which card wins? The bar says it first.</p>
+      </header>
+
+      <form className={`card ${s.form}`} onSubmit={handleSubmit} noValidate>
+        <div className={s.two}>
+          <Field label="Amount (₹)">{id => (
+            <input id={id} className="input num" type="number" min="1" step="0.01" inputMode="decimal" placeholder="2,500" required
+              value={amountRupees} onChange={e => setAmountRupees(e.target.value)} />
+          )}</Field>
+          <Field label="Transaction date">{id => (
+            <input id={id} className="input num" type="date" required value={transactionDate} onChange={e => setTransactionDate(e.target.value)} />
+          )}</Field>
+        </div>
+        <div className={s.two}>
+          <Field label="Category">{id => (
+            <select id={id} className="input" required value={merchantCategory} onChange={e => setMerchantCategory(e.target.value)}>
+              {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+          )}</Field>
+          <Field label="Merchant" hint="Optional">{id => (
+            <input id={id} className="input" type="text" placeholder="e.g. Swiggy" value={merchantName} onChange={e => setMerchantName(e.target.value)} />
+          )}</Field>
+        </div>
+
+        <div className="field" role="group" aria-labelledby={cardsGroupId}>
+          <div className={s.tilesHead}>
+            <span id={cardsGroupId} className="label">Cards to compare</span>
+            <span className="badge badge--neutral num">{selectedIds.size} selected</span>
+          </div>
+          {!ready ? (
+            <div className={s.tileGrid} aria-busy="true">
+              {Array.from({ length: 8 }, (_, i) => <span key={i} className={`skeleton ${s.skelTile}`} />)}
+            </div>
+          ) : (
             <>
-              <div style={s.cardList}>
+              <div className={s.tileGrid}>
                 {cards.map(c => (
-                  <label key={c.id} style={s.cardCheckItem}>
-                    <input type="checkbox" checked={selectedIds.has(c.id)} onChange={() => toggleCard(c.id)} />
-                    {c.issuer} — {c.name}
+                  <label key={c.id} className={s.tile}>
+                    <input type="checkbox" className="visually-hidden" checked={selectedIds.has(c.id)} onChange={() => toggleCard(c.id)} />
+                    <span className={s.tileInitial} aria-hidden="true">{c.issuer.slice(0, 1)}</span>
+                    <span className={s.tileName}>{c.name}</span>
+                    <span className={`hint ${s.tileIssuer}`}>{c.issuer}</span>
                   </label>
                 ))}
               </div>
-              <div style={s.selectLinks}>
-                <button type="button" style={s.linkBtn} onClick={() => setSelectedIds(new Set(cards.map(c => c.id)))}>Select all</button>
-                <button type="button" style={s.linkBtn} onClick={() => setSelectedIds(new Set())}>Clear</button>
-                <span style={{ color: '#888' }}>{selectedIds.size} selected</span>
+              <div className={s.tilesFoot}>
+                <button className="btn btn--ghost btn--sm" type="button" onClick={() => setSelectedIds(new Set(cards.map(c => c.id)))}>Select all</button>
+                <button className="btn btn--ghost btn--sm" type="button" onClick={() => setSelectedIds(new Set())}>Clear</button>
               </div>
             </>
           )}
         </div>
 
-        <div style={s.row} className="form-row">
-          <div style={s.field}>
-            <label style={s.label} htmlFor="amount">Amount (₹)</label>
-            <input id="amount" type="number" min="1" step="0.01" style={s.input} value={amountRupees}
-              onChange={e => setAmountRupees(e.target.value)} placeholder="e.g. 2500" required />
-          </div>
-          <div style={s.field}>
-            <label style={s.label} htmlFor="date">Transaction date</label>
-            <input id="date" type="date" style={s.input} value={transactionDate}
-              onChange={e => setTransactionDate(e.target.value)} required />
-          </div>
-        </div>
-
-        <div style={s.field}>
-          <label style={s.label} htmlFor="merchant">Merchant name (optional)</label>
-          <input id="merchant" type="text" style={s.input} value={merchantName}
-            onChange={e => setMerchantName(e.target.value)} placeholder="e.g. Swiggy" />
-        </div>
-
-        <div style={s.field}>
-          <label style={s.label} htmlFor="category">Merchant category</label>
-          <select id="category" style={s.input} value={merchantCategory} onChange={e => setMerchantCategory(e.target.value)} required>
-            {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-          </select>
-        </div>
-
-        <button type="submit" style={{ ...s.button, ...(canSubmit ? {} : disabledOverride) }} disabled={!canSubmit}>
+        <button className="btn btn--primary btn--block" type="submit" disabled={!canSubmit}>
           {submitting ? 'Calculating…' : `Compare ${selectedIds.size > 1 ? `${selectedIds.size} cards` : 'card'}`}
         </button>
+        {error && <div className="alert alert--error" role="alert">{error}</div>}
       </form>
 
-      {error && <div role="alert" style={s.error}>{error}</div>}
-
-      {results.length > 0 && (
-        <div style={s.resultsGrid}>
-          {results.map(cr => (
-            <OutcomeCard
-              key={cr.card.id}
-              cr={cr}
-              traceOpen={openTraces.has(cr.card.id)}
-              onToggleTrace={() => toggleTrace(cr.card.id)}
-            />
-          ))}
-        </div>
-      )}
+      <section aria-live="polite">
+        {ranked.length === 0 ? (
+          <div className={`card card--sunken ${s.empty}`}>
+            <p className={s.emptyTitle}>Compare your first transaction</p>
+            <p className="hint">Bars are proportional to net return — longer bar, better card.</p>
+          </div>
+        ) : (
+          <>
+            <ul className="chips" aria-label="Transaction compared">
+              <li className="badge badge--neutral num">{formatPaise(Math.round(parseFloat(amountRupees) * 100))}</li>
+              <li className="badge badge--neutral">{categoryLabel(merchantCategory)}</li>
+              <li className="badge badge--neutral num">{formatDate(transactionDate)}</li>
+              {merchantName && <li className="badge badge--neutral">{merchantName}</li>}
+            </ul>
+            <ol className={s.ranked}>{visible.map(r => {
+              const net = netOf(r)
+              const pct = bestNet !== null && net !== null && bestNet > 0 ? Math.max(4, Math.round((net / bestNet) * 100)) : null
+              return <BarRow key={r.card.id} r={r} pct={pct} open={openTraces.has(r.card.id)} onToggle={() => toggleTrace(r.card.id)} />
+            })}</ol>
+            {ranked.length > 6 && (
+              <button className="btn btn--secondary" type="button" onClick={() => setShowAll(!showAll)}>
+                {showAll ? 'Show top 6' : `Show all ${ranked.length} cards`}
+              </button>
+            )}
+          </>
+        )}
+      </section>
 
       <CorrectionHistorySection />
     </main>
