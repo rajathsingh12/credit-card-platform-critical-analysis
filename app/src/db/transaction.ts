@@ -11,7 +11,11 @@ export async function withTransaction<T>(
     await client.query('COMMIT')
     return result
   } catch (err) {
-    await client.query('ROLLBACK')
+    try {
+      await client.query('ROLLBACK')
+    } catch {
+      // original error wins; pg-pool destroys a dead client on release()
+    }
     throw err
   } finally {
     client.release()

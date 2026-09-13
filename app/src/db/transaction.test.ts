@@ -79,4 +79,29 @@ describe('withTransaction', () => {
     ).rejects.toThrow('boom')
     expect(release).toHaveBeenCalledTimes(1)
   })
+
+  it('keeps the original error when ROLLBACK itself rejects', async () => {
+    const queries: string[] = []
+    const release = vi.fn()
+    const client = {
+      query: vi.fn(async (sql: string) => {
+        queries.push(sql)
+        if (sql === 'ROLLBACK') throw new Error('connection dead')
+        return { rows: [] }
+      }),
+      release,
+    } as unknown as PoolClient
+    const pool = { connect: async () => client } as unknown as Pool
+    const original = new Error('boom')
+
+    await expect(
+      withTransaction(pool, async () => {
+        throw original
+      })
+    ).rejects.toBe(original)
+
+    expect(queries[queries.length - 1]).toBe('ROLLBACK')
+    expect(queries).not.toContain('COMMIT')
+    expect(release).toHaveBeenCalledTimes(1)
+  })
 })
