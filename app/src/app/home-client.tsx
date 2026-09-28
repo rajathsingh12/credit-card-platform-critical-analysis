@@ -50,24 +50,24 @@ function formatDate(iso: string): string {
   return Number.isNaN(d.getTime()) ? iso : inDate.format(d)
 }
 
-// Net return in paise; null when unresolved or a direct (non-variable) reward.
-function netOf(r: CardResult): number | null {
-  return r.result.resolved ? r.result.netReturnCents : null
+// Reward value earned in paise; null when unresolved or a direct (non-variable) reward.
+function grossOf(r: CardResult): number | null {
+  return r.result.resolved ? r.result.grossReturnCents : null
 }
 
-// Resolved by net return desc, unresolved last; shortfall is vs the winner.
+// Resolved by reward value desc, unresolved last; shortfall is vs the winner.
 type Ranked = CardResult & { rank: number; shortfallCents: number | null }
 
 export function rankResults(results: CardResult[]): Ranked[] {
-  const resolved = results.filter(r => netOf(r) !== null)
-  const noValue = results.filter(r => r.result.resolved && netOf(r) === null)
+  const resolved = results.filter(r => grossOf(r) !== null)
+  const noValue = results.filter(r => r.result.resolved && grossOf(r) === null)
   const unresolved = results.filter(r => !r.result.resolved)
-  resolved.sort((a, b) => (netOf(b) ?? 0) - (netOf(a) ?? 0))
-  const best = resolved.length > 0 ? netOf(resolved[0]) : null
+  resolved.sort((a, b) => (grossOf(b) ?? 0) - (grossOf(a) ?? 0))
+  const best = resolved.length > 0 ? grossOf(resolved[0]) : null
   return [...resolved, ...noValue, ...unresolved].map((r, i) => ({
     ...r,
     rank: i + 1,
-    shortfallCents: best !== null && i > 0 && netOf(r) !== null ? (netOf(r) as number) - best : null,
+    shortfallCents: best !== null && i > 0 && grossOf(r) !== null ? (grossOf(r) as number) - best : null,
   }))
 }
 
@@ -227,7 +227,7 @@ function BarRow({ r, pct, open, onToggle }: { r: Ranked; pct: number | null; ope
           {!res.resolved && <span className="badge badge--unresolved">⚠ Unresolved</span>}
           <span className={s.rowCard}>{r.card.name} <span className="hint">{r.card.issuer}</span></span>
         </div>
-        {res.resolved && res.netReturnCents !== null && (
+        {res.resolved && res.grossReturnCents !== null && (
           <span className={s.track} aria-hidden="true">
             <span className={pct === null ? '' : s.bar} style={{ width: `${pct}%` }} />
           </span>
@@ -235,10 +235,10 @@ function BarRow({ r, pct, open, onToggle }: { r: Ranked; pct: number | null; ope
         <div className={s.rowFoot}>
           {res.resolved ? (
             <>
-              <span className={`num ${r.rank === 1 ? s.rowNetHero : s.rowNet}`}>{formatPaise(res.netReturnCents)}</span>
+              <span className={`num ${r.rank === 1 ? s.rowNetHero : s.rowNet}`}>{formatPaise(res.grossReturnCents)}</span>
               {r.shortfallCents !== null && <span className="hint num">({formatPaise(r.shortfallCents)} vs best)</span>}
               <span className="hint num">{formatInt(res.rewardsEarned)} pts</span>
-              {res.annualFeeAmortizedCents !== null && <span className="hint num">fee {formatPaise(res.annualFeeAmortizedCents)}</span>}
+              {res.annualFeeCents !== null && <span className="hint num">fee {formatPaise(res.annualFeeCents)}/yr</span>}
             </>
           ) : (
             <span className={s.unresolvedReason}>{res.reason} · {formatInt(res.rewardsEarned)} pts, cash value unknown</span>
@@ -380,8 +380,8 @@ export default function HomeClient() {
   const canSubmit = ready && selectedIds.size > 0 && !submitting
 
   const ranked = rankResults(results)
-  const best = ranked.find(r => netOf(r) !== null)
-  const bestNet = best ? netOf(best) : null
+  const best = ranked.find(r => grossOf(r) !== null)
+  const bestGross = best ? grossOf(best) : null
   const visible = showAll ? ranked : ranked.slice(0, 6)
 
   return (
@@ -451,7 +451,7 @@ export default function HomeClient() {
         {ranked.length === 0 ? (
           <div className={`card card--sunken ${s.empty}`}>
             <p className={s.emptyTitle}>Compare your first transaction</p>
-            <p className="hint">Bars are proportional to net return — longer bar, better card.</p>
+            <p className="hint">Bars are proportional to reward earned — longer bar, better card.</p>
           </div>
         ) : (
           <>
@@ -462,8 +462,8 @@ export default function HomeClient() {
               {merchantName && <li className="badge badge--neutral">{merchantName}</li>}
             </ul>
             <ol className={s.ranked}>{visible.map(r => {
-              const net = netOf(r)
-              const pct = bestNet !== null && net !== null && bestNet > 0 ? Math.max(4, Math.round((net / bestNet) * 100)) : null
+              const gross = grossOf(r)
+              const pct = bestGross !== null && gross !== null && bestGross > 0 ? Math.max(4, Math.round((gross / bestGross) * 100)) : null
               return <BarRow key={r.card.id} r={r} pct={pct} open={openTraces.has(r.card.id)} onToggle={() => toggleTrace(r.card.id)} />
             })}</ol>
             {ranked.length > 6 && (

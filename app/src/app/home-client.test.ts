@@ -5,10 +5,10 @@ import { toggleItem, rankResults } from './home-client'
 type Input = Parameters<typeof rankResults>[0][number]
 const trace = { transactionId: 't', entries: [] }
 const card = (id: string) => ({ id, name: id, issuer: 'X', rewardCurrency: 'points' })
-const resolved = (id: string, netReturnCents: number | null): Input => ({
+const resolved = (id: string, grossReturnCents: number | null): Input => ({
   card: card(id),
   ruleMeta: {},
-  result: { resolved: true, transactionId: 't', rewardsEarned: 1, ruleApplied: null, scenarioApplied: null, netReturnCents, annualFeeAmortizedCents: null, trace } satisfies CalcResult,
+  result: { resolved: true, transactionId: 't', rewardsEarned: 1, ruleApplied: null, scenarioApplied: null, grossReturnCents, annualFeeCents: null, trace } satisfies CalcResult,
 })
 const unresolved = (id: string): Input => ({
   card: card(id),
@@ -17,7 +17,7 @@ const unresolved = (id: string): Input => ({
 })
 
 describe('rankResults', () => {
-  it('orders resolved by net return desc, then direct rewards, then unresolved', () => {
+  it('orders resolved by reward value desc, then direct rewards, then unresolved', () => {
     const out = rankResults([unresolved('u'), resolved('low', 100), resolved('direct', null), resolved('high', 500)])
     expect(out.map(r => r.card.id)).toEqual(['high', 'low', 'direct', 'u'])
     expect(out.map(r => r.rank)).toEqual([1, 2, 3, 4])

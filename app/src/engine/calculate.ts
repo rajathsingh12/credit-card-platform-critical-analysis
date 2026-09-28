@@ -179,17 +179,14 @@ export function calculate(
       } satisfies UnresolvedOutcome
     }
     const { scenario } = selection
-    const grossReturn = Math.round(best.pointsAfterCap * scenario.centsPerPoint)
-    const annualFeeAmortizedCents =
-      scenario.annualFeeCents !== null ? Math.round(scenario.annualFeeCents / 12) : null
     return {
       resolved: true,
       transactionId: context.transactionId,
       rewardsEarned: best.pointsAfterCap,
       ruleApplied: best.rule.id,
       scenarioApplied: scenario.id,
-      netReturnCents: annualFeeAmortizedCents !== null ? grossReturn - annualFeeAmortizedCents : grossReturn,
-      annualFeeAmortizedCents,
+      grossReturnCents: Math.round(best.pointsAfterCap * scenario.centsPerPoint),
+      annualFeeCents: scenario.annualFeeCents,
       trace,
     } satisfies TransactionOutcome
   }
@@ -200,8 +197,8 @@ export function calculate(
     rewardsEarned: best?.pointsAfterCap ?? 0,
     ruleApplied: best?.rule.id ?? null,
     scenarioApplied: null,
-    netReturnCents: null,
-    annualFeeAmortizedCents: null,
+    grossReturnCents: null,
+    annualFeeCents: null,
     trace,
   } satisfies TransactionOutcome
 }

@@ -165,27 +165,25 @@ async function main() {
         }
         if (rule.ruleData.ruleType === 'variable') {
           check(outcome.scenarioApplied !== null, `${probe} cited no Redemption Scenario`)
-          const expectedFee =
-            spec.annualFeeCents === null ? null : Math.round(spec.annualFeeCents / 12)
           check(
-            outcome.annualFeeAmortizedCents === expectedFee,
-            `${probe} amortized ${outcome.annualFeeAmortizedCents}, expected ${expectedFee}`
+            outcome.annualFeeCents === spec.annualFeeCents,
+            `${probe} reported annual fee ${outcome.annualFeeCents}, expected ${spec.annualFeeCents}`
           )
           check(
-            outcome.netReturnCents !== null && Number.isInteger(outcome.netReturnCents),
-            `${probe} reported a non-integer Net Return`
+            outcome.grossReturnCents !== null && Number.isInteger(outcome.grossReturnCents),
+            `${probe} reported a non-integer Gross Return`
           )
         }
       }
     }
   }
 
-  const goldenCases: { issuer: string; name: string; context: Partial<TransactionContext>; rewards: number; net: number | null }[] = [
-    { issuer: 'HDFC Bank', name: 'Millennia', context: { amount: 250_000, merchantCategory: 'dining' }, rewards: 2_500, net: null },
-    { issuer: 'Axis Bank', name: 'ACE', context: { amount: 400_000, merchantCategory: 'grocery' }, rewards: 6_000, net: null },
-    { issuer: 'HDFC Bank', name: 'MoneyBack+', context: { amount: 20_000_000, merchantCategory: 'online' }, rewards: 2_000, net: 45_833 },
-    { issuer: 'American Express', name: 'Platinum Travel Credit Card', context: { amount: 5_000_000, merchantCategory: 'travel' }, rewards: 1_000, net: 0 },
-    { issuer: 'American Express', name: 'Platinum Travel Credit Card', context: { amount: 5_000_000, merchantCategory: 'dining' }, rewards: 1_000, net: -25_000 },
+  const goldenCases: { issuer: string; name: string; context: Partial<TransactionContext>; rewards: number; gross: number | null }[] = [
+    { issuer: 'HDFC Bank', name: 'Millennia', context: { amount: 250_000, merchantCategory: 'dining' }, rewards: 2_500, gross: null },
+    { issuer: 'Axis Bank', name: 'ACE', context: { amount: 400_000, merchantCategory: 'grocery' }, rewards: 6_000, gross: null },
+    { issuer: 'HDFC Bank', name: 'MoneyBack+', context: { amount: 20_000_000, merchantCategory: 'online' }, rewards: 2_000, gross: 50_000 },
+    { issuer: 'American Express', name: 'Platinum Travel Credit Card', context: { amount: 5_000_000, merchantCategory: 'travel' }, rewards: 1_000, gross: 50_000 },
+    { issuer: 'American Express', name: 'Platinum Travel Credit Card', context: { amount: 5_000_000, merchantCategory: 'dining' }, rewards: 1_000, gross: 25_000 },
   ]
 
   for (const gold of goldenCases) {
@@ -217,8 +215,8 @@ async function main() {
       `${label} earned ${outcome.rewardsEarned}, expected ${gold.rewards}`
     )
     check(
-      outcome.netReturnCents === gold.net,
-      `${label} net return ${outcome.netReturnCents}, expected ${gold.net}`
+      outcome.grossReturnCents === gold.gross,
+      `${label} gross return ${outcome.grossReturnCents}, expected ${gold.gross}`
     )
   }
 

@@ -38,8 +38,8 @@ describe('golden dataset: cash-back cards', () => {
     expect(outcome.rewardsEarned).toBe(2_500)
     expect(outcome.ruleApplied).toBe(`rv::${cardKey(spec)}`)
     expect(outcome.scenarioApplied).toBeNull()
-    expect(outcome.netReturnCents).toBeNull()
-    expect(outcome.annualFeeAmortizedCents).toBeNull()
+    expect(outcome.grossReturnCents).toBeNull()
+    expect(outcome.annualFeeCents).toBeNull()
   })
 
   it('pays 1.5% on Axis Bank ACE for a Rs 4,000 grocery spend', () => {
@@ -80,7 +80,7 @@ describe('golden dataset: cash-back cards', () => {
 })
 
 describe('golden dataset: caps', () => {
-  it('caps HDFC Bank MoneyBack+ at 2,000 points and nets the fee out', () => {
+  it('caps HDFC Bank MoneyBack+ at 2,000 points and reports gross reward with the full fee', () => {
     const spec = findSeedCard('HDFC Bank', 'MoneyBack+')
     const outcome = run(
       spec,
@@ -90,8 +90,9 @@ describe('golden dataset: caps', () => {
     // 0.02 points per rupee on Rs 2,00,000 would earn 4,000 points; the cap holds it at 2,000.
     expect(outcome.rewardsEarned).toBe(2_000)
     expect(outcome.scenarioApplied).toBe(`rs::${cardKey(spec)}::travel-portal`)
-    expect(outcome.annualFeeAmortizedCents).toBe(4_167)
-    expect(outcome.netReturnCents).toBe(45_833)
+    // 2,000 pts × 25 paise = 50,000 paise of reward value; the ₹500/yr fee is context, not netted out.
+    expect(outcome.grossReturnCents).toBe(50_000)
+    expect(outcome.annualFeeCents).toBe(50_000)
 
     const applied = outcome.trace.entries.find(e => e.applied)
     expect(applied?.pointsBeforeCap).toBe(4_000)
@@ -100,7 +101,7 @@ describe('golden dataset: caps', () => {
 })
 
 describe('golden dataset: redemption scenario selection', () => {
-  it('picks the travel scenario for Amex Platinum Travel and breaks even against the fee', () => {
+  it('picks the travel scenario for Amex Platinum Travel and reports gross reward with the full fee', () => {
     const spec = findSeedCard('American Express', 'Platinum Travel Credit Card')
     const outcome = run(
       spec,
@@ -109,11 +110,11 @@ describe('golden dataset: redemption scenario selection', () => {
 
     expect(outcome.rewardsEarned).toBe(1_000)
     expect(outcome.scenarioApplied).toBe(`rs::${cardKey(spec)}::membership-rewards-travel`)
-    expect(outcome.annualFeeAmortizedCents).toBe(50_000)
-    expect(outcome.netReturnCents).toBe(0)
+    expect(outcome.grossReturnCents).toBe(50_000)
+    expect(outcome.annualFeeCents).toBe(600_000)
   })
 
-  it('falls back to the statement-credit scenario off travel, and reports a negative net return', () => {
+  it('falls back to the statement-credit scenario off travel, and still reports a positive gross reward', () => {
     const spec = findSeedCard('American Express', 'Platinum Travel Credit Card')
     const outcome = run(
       spec,
@@ -122,7 +123,8 @@ describe('golden dataset: redemption scenario selection', () => {
 
     expect(outcome.rewardsEarned).toBe(1_000)
     expect(outcome.scenarioApplied).toBe(`rs::${cardKey(spec)}::membership-rewards-statement`)
-    expect(outcome.netReturnCents).toBe(-25_000)
+    expect(outcome.grossReturnCents).toBe(25_000)
+    expect(outcome.annualFeeCents).toBe(600_000)
   })
 
   it('reports an Unresolved Outcome when no scenario covers the transaction', () => {
@@ -199,20 +201,19 @@ describe('Critical Calculation Errors across the Verified Card Set', () => {
     expect(overCap).toEqual([])
   })
 
-  it('amortizes each annual fee as one twelfth of the fee stated on the card', () => {
+  it('reports the full annual fee stated on the card wherever a scenario applies', () => {
     const wrong = PROBES.filter(p => {
       const result = run(p.spec, p.context) as TransactionOutcome
-      if (result.annualFeeAmortizedCents === null) return p.spec.annualFeeCents !== null && result.scenarioApplied !== null
-      const expected = Math.round((p.spec.annualFeeCents ?? 0) / 12)
-      return result.annualFeeAmortizedCents !== expected
+      if (result.annualFeeCents === null) return p.spec.annualFeeCents !== null && result.scenarioApplied !== null
+      return result.annualFeeCents !== p.spec.annualFeeCents
     }).map(label)
     expect(wrong).toEqual([])
   })
 
-  it('states a net return in whole minor units wherever it states one at all', () => {
+  it('states a gross return in whole minor units wherever it states one at all', () => {
     const bad = PROBES.filter(p => {
       const result = run(p.spec, p.context) as TransactionOutcome
-      return result.netReturnCents !== null && !Number.isInteger(result.netReturnCents)
+      return result.grossReturnCents !== null && !Number.isInteger(result.grossReturnCents)
     }).map(label)
     expect(bad).toEqual([])
   })

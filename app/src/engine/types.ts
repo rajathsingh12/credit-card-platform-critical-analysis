@@ -75,8 +75,8 @@ export interface TransactionOutcome {
   rewardsEarned: number // integer points; 0 if no rule matched
   ruleApplied: string | null // RuleVersion.id or null
   scenarioApplied: string | null // RedemptionScenario.id or null
-  netReturnCents: number | null // points × centsPerPoint; null for direct rewards
-  annualFeeAmortizedCents: number | null // annualFeeCents / 12; null if no fee
+  grossReturnCents: number | null // reward value earned = points × centsPerPoint; null for direct rewards
+  annualFeeCents: number | null // full annual fee, shown as separate context; null if no fee
   trace: CalculationTrace
 }
 

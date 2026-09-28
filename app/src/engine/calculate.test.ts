@@ -395,7 +395,7 @@ describe('no rules', () => {
 // --- variable rewards golden dataset ---
 
 describe('variable rewards — golden dataset', () => {
-  it('VGD-01: variable rule with scenario earns correct points and net return', () => {
+  it('VGD-01: variable rule with scenario earns correct points and reward value', () => {
     // $100 at 3x = 300 points; 1.5 cpp → 450 cents
     const outcome = calculate(
       makeContext({ amount: 10000, merchantCategory: 'dining' }),
@@ -406,7 +406,7 @@ describe('variable rewards — golden dataset', () => {
     if (outcome.resolved) {
       expect(outcome.rewardsEarned).toBe(300)
       expect(outcome.scenarioApplied).toBe('s1')
-      expect(outcome.netReturnCents).toBe(450)
+      expect(outcome.grossReturnCents).toBe(450)
     }
   })
 
@@ -433,7 +433,7 @@ describe('variable rewards — golden dataset', () => {
     expect(outcome.resolved).toBe(true)
     if (outcome.resolved) {
       expect(outcome.rewardsEarned).toBe(200)
-      expect(outcome.netReturnCents).toBe(400)
+      expect(outcome.grossReturnCents).toBe(400)
     }
   })
 
@@ -448,8 +448,8 @@ describe('variable rewards — golden dataset', () => {
     expect(outcome.ruleApplied).toBeNull()
   })
 
-  it('VGD-05: annual fee amortized over 12 months in outcome', () => {
-    // $95/year = 9500 cents; 9500 / 12 = 791.67 → rounds to 792
+  it('VGD-05: reports the full annual fee on the outcome for context', () => {
+    // $95/year = 9500 cents, surfaced in full alongside the reward value (not amortized)
     const outcome = calculate(
       makeContext({ amount: 10000, merchantCategory: 'dining' }),
       [makeVariableRule('r1', { categories: ['dining'], pointsPerDollar: 1 })],
@@ -457,7 +457,7 @@ describe('variable rewards — golden dataset', () => {
     )
     expect(outcome.resolved).toBe(true)
     if (outcome.resolved) {
-      expect(outcome.annualFeeAmortizedCents).toBe(792)
+      expect(outcome.annualFeeCents).toBe(9500)
     }
   })
 
@@ -497,7 +497,7 @@ describe('scenario selection', () => {
     expect(outcome.resolved).toBe(true)
     if (outcome.resolved) {
       expect(outcome.scenarioApplied).toBe('specific')
-      expect(outcome.netReturnCents).toBe(200)
+      expect(outcome.grossReturnCents).toBe(200)
     }
   })
 
@@ -579,10 +579,10 @@ describe('scenario selection', () => {
   })
 })
 
-// --- net return and fee amortization ---
+// --- gross return and annual fee ---
 
-describe('net return and fee amortization', () => {
-  it('null annualFeeCents gives null annualFeeAmortizedCents', () => {
+describe('gross return and annual fee', () => {
+  it('null scenario annual fee gives null annualFeeCents on the outcome', () => {
     const outcome = calculate(
       makeContext({ amount: 10000, merchantCategory: 'dining' }),
       [makeVariableRule('r1', { categories: ['dining'], pointsPerDollar: 1 })],
@@ -590,19 +590,19 @@ describe('net return and fee amortization', () => {
     )
     expect(outcome.resolved).toBe(true)
     if (outcome.resolved) {
-      expect(outcome.annualFeeAmortizedCents).toBeNull()
+      expect(outcome.annualFeeCents).toBeNull()
     }
   })
 
-  it('direct rules yield null netReturnCents and null annualFeeAmortizedCents', () => {
+  it('direct rules yield null grossReturnCents and null annualFeeCents', () => {
     const outcome = calculate(
       makeContext({ amount: 10000, merchantCategory: 'dining' }),
       [makeRule('r1', { categories: ['dining'], pointsPerDollar: 3 })]
     )
     expect(outcome.resolved).toBe(true)
     if (outcome.resolved) {
-      expect(outcome.netReturnCents).toBeNull()
-      expect(outcome.annualFeeAmortizedCents).toBeNull()
+      expect(outcome.grossReturnCents).toBeNull()
+      expect(outcome.annualFeeCents).toBeNull()
     }
   })
 })
