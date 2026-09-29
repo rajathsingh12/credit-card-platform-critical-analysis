@@ -560,7 +560,7 @@ Open a browser. Do this after Stage 5 so you already know the API layer is healt
 | 2 | `/invite` | Heading **Beta Access**, one monospace input, disabled **Enter** button |
 | 3 | paste `$INVITE`, submit | Redirected to `/`, heading **Credit Card Intelligence Platform** |
 | 4 | pick a card, amount, category, date | Outcome card renders |
-| 5 | inspect the outcome card | Shows `Resolved` / `Unresolved` state, Net Return, and an **Evidence** badge |
+| 5 | inspect the outcome card | Shows `Resolved` / `Unresolved` state, Reward Value earned (annual fee shown separately), and an **Evidence** badge |
 | 6 | expand the trace | Each trace entry shows category, rate, and its own evidence badge |
 | 7 | expand **Correction History** | Section toggles open (empty until Stage 8) |
 | 8 | click **Report an issue with this rule** | Form appears; on submit shows "Report submitted — thank you. A Data Lead has been created for review." |

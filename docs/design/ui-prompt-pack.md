@@ -106,7 +106,7 @@ INPUT SECTION — one form, currently five stacked fields:
 - Submit button whose label is dynamic: "Compare 3 cards" / "Compare card".
 
 RESULTS SECTION — one card per selected credit card. THE CRITICAL CHANGE: results are currently
-unordered. Rank them by net return descending, give the top result a distinct winning treatment
+unordered. Rank them by reward value descending, give the top result a distinct winning treatment
 (the single allowed shadow, an accent border, a "Best for this spend" badge), and on every other
 card show its shortfall against the winner, e.g. "−₹108.00 vs best".
 
@@ -114,9 +114,9 @@ Per-card data, all real:
 - Card name + issuer.
 - resolved | unresolved. Unresolved cards show a plain-language reason instead of figures and must
   sort last regardless of ranking.
-- rewardsEarned (integer points), netReturnCents, annualFeeAmortizedCents — render as ₹ with two
-  decimals, tabular numerals. Make the net-return figure the largest text on the card (28-36px);
-  points are secondary.
+- rewardsEarned (integer points), grossReturnCents, annualFeeCents — render as ₹ with two
+  decimals, tabular numerals. Make the reward-value figure the largest text on the card (28-36px);
+  the annual fee is a secondary "₹X/yr" chip and points are secondary.
 - Evidence tier badge for the applied rule (use the ramp from the design system).
 - Source-verified date, rule-effective-from date.
 - Optional "rule retracted" destructive badge, which must visually override the evidence badge.
@@ -216,7 +216,7 @@ Do this:
 3. Extract the components that now exist in all three screens — EvidenceBadge, StatusBadge,
    Badge, Banner, Button, Field — into a shared `src/components/` directory. EvidenceBadge is
    currently duplicated verbatim in `home-client.tsx` and `admin-console.tsx`.
-4. Implement result ranking in `home-client.tsx`: sort resolved results by netReturnCents
+4. Implement result ranking in `home-client.tsx`: sort resolved results by grossReturnCents
    descending, unresolved last, and derive each card's shortfall from the winner.
 
 Hard constraints:

@@ -1,42 +1,91 @@
 'use client'
 
-import { Suspense, useState } from 'react'
+import { Suspense, useId, useRef, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
+import styles from './invite.module.css'
 
-const s: Record<string, React.CSSProperties> = {
-  page: { fontFamily: 'system-ui, sans-serif', maxWidth: 400, margin: '6rem auto', padding: '0 1rem', color: '#1a1a1a' },
-  heading: { fontSize: '1.3rem', fontWeight: 700, marginBottom: '0.25rem' },
-  sub: { fontSize: '0.875rem', color: '#555', marginBottom: '1.5rem' },
-  field: { marginBottom: '1rem' },
-  label: { display: 'block', fontSize: '0.8125rem', fontWeight: 600, marginBottom: '0.3rem' },
-  input: { display: 'block', width: '100%', boxSizing: 'border-box', padding: '0.5rem 0.625rem', fontSize: '0.9375rem', border: '1px solid #ccc', borderRadius: 6, background: '#fff', fontFamily: 'monospace' },
-  button: { width: '100%', padding: '0.65rem 1rem', fontSize: '1rem', fontWeight: 600, background: '#1a1a1a', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', marginTop: '0.25rem' },
-  buttonDisabled: { width: '100%', padding: '0.65rem 1rem', fontSize: '1rem', fontWeight: 600, background: '#888', color: '#fff', border: 'none', borderRadius: 6, cursor: 'not-allowed', marginTop: '0.25rem' },
-  error: { marginTop: '0.75rem', padding: '0.6rem 0.75rem', background: '#fff0f0', border: '1px solid #f5c6c6', borderRadius: 6, fontSize: '0.875rem', color: '#b00' },
-  revoked: { marginBottom: '1rem', padding: '0.6rem 0.75rem', background: '#fff3cd', border: '1px solid #ffc107', borderRadius: 6, fontSize: '0.875rem', color: '#856404' },
+const SEG_COUNT = 6
+const SEG_LEN = 4
+const CODE_LEN = SEG_COUNT * SEG_LEN
+
+function sanitize(raw: string): string {
+  return raw.toLowerCase().replace(/[^0-9a-f]/g, '')
 }
 
 function InviteForm() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const revoked = searchParams.get('revoked') === '1'
+  const uid = useId()
+  const labelId = `${uid}-label`
+  const helpId = `${uid}-help`
 
-  const [code, setCode] = useState('')
+  const [segs, setSegs] = useState<string[]>(() => Array(SEG_COUNT).fill(''))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [invalid, setInvalid] = useState(false)
+  const refs = useRef<Array<HTMLInputElement | null>>([])
+
+  const code = segs.join('')
+  const canSubmit = !submitting && code.length === CODE_LEN
+
+  function focusSeg(i: number) {
+    refs.current[Math.max(0, Math.min(i, SEG_COUNT - 1))]?.focus()
+  }
+
+  function setSeg(i: number, raw: string) {
+    const v = sanitize(raw).slice(0, SEG_LEN)
+    setSegs(prev => {
+      const next = [...prev]
+      next[i] = v
+      return next
+    })
+    setInvalid(false)
+    setError(null)
+    if (v.length === SEG_LEN && i < SEG_COUNT - 1) focusSeg(i + 1)
+  }
+
+  function onKeyDown(i: number, e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Backspace' && !segs[i] && i > 0) focusSeg(i - 1)
+    else if (e.key === 'ArrowLeft' && i > 0) focusSeg(i - 1)
+    else if (e.key === 'ArrowRight' && i < SEG_COUNT - 1) focusSeg(i + 1)
+  }
+
+  function onPaste(i: number, e: React.ClipboardEvent<HTMLInputElement>) {
+    e.preventDefault()
+    let chars = sanitize(e.clipboardData.getData('text')).slice(0, CODE_LEN - i * SEG_LEN)
+    const next = [...segs]
+    let j = i
+    for (; j < SEG_COUNT && chars.length > 0; j++) {
+      next[j] = chars.slice(0, SEG_LEN)
+      chars = chars.slice(SEG_LEN)
+    }
+    setSegs(next)
+    setInvalid(false)
+    setError(null)
+    focusSeg(Math.min(j, SEG_COUNT - 1))
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
+    if (code.length < CODE_LEN) {
+      setInvalid(true)
+      setError('Enter all 24 characters of your invite code.')
+      const empty = segs.findIndex(seg => seg.length < SEG_LEN)
+      focusSeg(empty < 0 ? 0 : empty)
+      return
+    }
     setSubmitting(true)
     try {
       const res = await fetch('/api/invite/redeem', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: code.trim() }),
+        body: JSON.stringify({ code }),
       })
       const data = await res.json()
       if (!res.ok) {
+        setInvalid(true)
         setError(data.error ?? 'Invalid invite code')
         return
       }
@@ -49,39 +98,86 @@ function InviteForm() {
   }
 
   return (
-    <main style={s.page}>
-      <h1 style={s.heading}>Beta Access</h1>
-      <p style={s.sub}>Enter your invite code to access the calculator.</p>
-      {revoked && (
-        <div role="alert" style={s.revoked}>
-          Your invite code has been revoked. Contact the team for a new one.
+    <div className={styles.page}>
+      <header className={styles.topbar}>
+        <div className={styles.topbarInner}>
+          <span className={styles.brandMark} aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 3l7 3v5c0 4.4-3 7.8-7 9-4-1.2-7-4.6-7-9V6l7-3z" />
+              <path d="M9 12l2 2 4-4" />
+            </svg>
+          </span>
+          <span className={styles.brandName}>Credit Card Intelligence</span>
+          <span className={`badge badge--beta ${styles.topBadge}`}>Beta</span>
         </div>
-      )}
-      <form onSubmit={handleSubmit} noValidate>
-        <div style={s.field}>
-          <label style={s.label} htmlFor="code">Invite code</label>
-          <input
-            id="code"
-            type="text"
-            style={s.input}
-            value={code}
-            onChange={e => setCode(e.target.value)}
-            placeholder="24-character code"
-            autoComplete="off"
-            spellCheck={false}
-            required
-          />
+      </header>
+
+      <main className={styles.gateWrap}>
+        <div className={styles.gate}>
+          <section className={`card ${styles.card}`} aria-labelledby={`${uid}-title`}>
+            <p className="eyebrow">Beta access</p>
+            <h1 id={`${uid}-title`} className={styles.title}>Enter your invite code</h1>
+            <p className={styles.context}>
+              Credit Card Intelligence compares verified credit-card rewards for Indian cardholders —
+              every figure carries its evidence tier and source date. Access is invite-only during
+              the private beta.
+            </p>
+
+            {revoked && (
+              <div className={`alert alert--warning ${styles.banner}`} role="alert">
+                Your invite code has been revoked. Contact the team for a new one.
+              </div>
+            )}
+            {error && (
+              <div className={`alert alert--error ${styles.banner}`} role="alert">{error}</div>
+            )}
+            <form onSubmit={handleSubmit} noValidate>
+              <div className={styles.fieldHead}>
+                <span className="label" id={labelId}>Invite code</span>
+                <span className="hint">24 hex characters</span>
+              </div>
+              <div
+                className={`${styles.segs} ${invalid ? styles.segsInvalid : ''}`}
+                role="group"
+                aria-labelledby={labelId}
+                aria-describedby={helpId}
+              >
+                {segs.map((seg, i) => (
+                  <input
+                    key={i}
+                    ref={el => { refs.current[i] = el }}
+                    className={`${styles.seg} num`}
+                    type="text"
+                    inputMode="text"
+                    maxLength={SEG_LEN}
+                    value={seg}
+                    onChange={e => setSeg(i, e.target.value)}
+                    onKeyDown={e => onKeyDown(i, e)}
+                    onPaste={e => onPaste(i, e)}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    disabled={submitting}
+                    aria-label={`Invite code, group ${i + 1} of ${SEG_COUNT}`}
+                  />
+                ))}
+              </div>
+              <p id={helpId} className={styles.codeHelp}>
+                Paste your full code into any box — it fills the rest.
+              </p>
+              <button type="submit" className="btn btn--primary btn--block" disabled={!canSubmit}>
+                {submitting ? (
+                  <>
+                    <span className={styles.spinner} aria-hidden="true" />Verifying…
+                  </>
+                ) : 'Enter'}
+              </button>
+            </form>
+          </section>
         </div>
-        <button
-          type="submit"
-          style={submitting || !code.trim() ? s.buttonDisabled : s.button}
-          disabled={submitting || !code.trim()}
-        >
-          {submitting ? 'Verifying…' : 'Enter'}
-        </button>
-      </form>
-      {error && <div role="alert" style={s.error}>{error}</div>}
-    </main>
+      </main>
+    </div>
   )
 }
 

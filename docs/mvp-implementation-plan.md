@@ -39,7 +39,7 @@ Exit criteria: every supported rule has provenance and effective dates, and the 
 ## Phase 2: Zero-Login Consumer Workflow
 
 - Build the Transaction Context form for amount, merchant or category, payment channel, and relevant month-to-date spend.
-- Show side-by-side Transaction Outcomes and Net Return for selected cards.
+- Show side-by-side Transaction Outcomes and Reward Value (with the annual fee as separate context) for selected cards.
 - Show the Calculation Trace, assumptions, source dates, Evidence Status, and Unresolved Outcome state.
 - Use current effective Rule Versions only; display the effective date.
 - Keep beta access gated by revocable invite links or codes without creating user accounts.

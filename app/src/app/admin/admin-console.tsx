@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import styles from './admin.module.css'
 import {
   adminDownload,
   adminFetch,
@@ -13,66 +14,38 @@ import {
   type EvidenceStatus,
 } from './admin-client'
 
-const s: Record<string, React.CSSProperties> = {
-  page: { fontFamily: 'system-ui, sans-serif', maxWidth: 1100, margin: '0 auto', padding: '2rem 1rem', color: '#1a1a1a' },
-  heading: { fontSize: '1.4rem', fontWeight: 700, marginBottom: '0.25rem' },
-  sub: { fontSize: '0.875rem', color: '#555', marginBottom: '1.5rem' },
-  section: { marginTop: '2rem', borderTop: '1px solid #eee', paddingTop: '1.25rem' },
-  sectionTitle: { fontSize: '1.1rem', fontWeight: 700, marginBottom: '0.75rem' },
-  field: { marginBottom: '0.75rem' },
-  label: { display: 'block', fontSize: '0.8125rem', fontWeight: 600, marginBottom: '0.3rem' },
-  input: { display: 'block', width: '100%', boxSizing: 'border-box', padding: '0.5rem 0.625rem', fontSize: '0.9375rem', border: '1px solid #ccc', borderRadius: 6, background: '#fff', fontFamily: 'monospace' },
-  dateInput: { display: 'block', padding: '0.5rem 0.625rem', fontSize: '0.9375rem', border: '1px solid #ccc', borderRadius: 6, background: '#fff' },
-  select: { display: 'block', width: '100%', boxSizing: 'border-box', padding: '0.5rem 0.625rem', fontSize: '0.9375rem', border: '1px solid #ccc', borderRadius: 6, background: '#fff' },
-  textarea: { display: 'block', width: '100%', boxSizing: 'border-box', padding: '0.5rem 0.625rem', fontSize: '0.875rem', border: '1px solid #ccc', borderRadius: 6, background: '#fff', fontFamily: 'monospace', minHeight: 60, resize: 'vertical' as const },
-  button: { padding: '0.55rem 1rem', fontSize: '0.9375rem', fontWeight: 600, background: '#1a1a1a', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' },
-  buttonSecondary: { padding: '0.55rem 1rem', fontSize: '0.9375rem', fontWeight: 600, background: '#fff', color: '#1a1a1a', border: '1px solid #ccc', borderRadius: 6, cursor: 'pointer' },
-  buttonDisabled: { padding: '0.55rem 1rem', fontSize: '0.9375rem', fontWeight: 600, background: '#888', color: '#fff', border: 'none', borderRadius: 6, cursor: 'not-allowed' },
-  rowInline: { display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' as const },
-  error: { marginTop: '0.6rem', padding: '0.6rem 0.75rem', background: '#fff0f0', border: '1px solid #f5c6c6', borderRadius: 6, fontSize: '0.875rem', color: '#b00' },
-  success: { marginTop: '0.6rem', padding: '0.6rem 0.75rem', background: '#d4edda', border: '1px solid #a8d5a2', borderRadius: 6, fontSize: '0.875rem', color: '#155724' },
-  notice: { padding: '0.6rem 0.75rem', background: '#fff3cd', border: '1px solid #ffc107', borderRadius: 6, fontSize: '0.8125rem', color: '#856404' },
-  card: { padding: '0.85rem', background: '#f8f8f8', border: '1px solid #ddd', borderRadius: 8, marginBottom: '0.75rem' },
-  cardTitle: { fontWeight: 700, fontSize: '0.95rem' },
-  cardSub: { fontSize: '0.8125rem', color: '#555', marginBottom: '0.5rem' },
-  metaRow: { display: 'flex', justifyContent: 'space-between', fontSize: '0.8125rem', color: '#555', padding: '0.2rem 0', borderBottom: '1px solid #eee' },
-  metaLabel: { color: '#777' },
-  badge: { display: 'inline-block', padding: '0.12rem 0.45rem', borderRadius: 4, fontSize: '0.72rem', fontWeight: 700 },
-  badgePending: { background: '#fff3cd', color: '#856404' },
-  badgeVerified: { background: '#cce5ff', color: '#004085' },
-  badgeApproved: { background: '#d4edda', color: '#155724' },
-  badgeRejected: { background: '#f8d7da', color: '#721c24' },
-  pre: { padding: '0.6rem', background: '#fafafa', border: '1px solid #e0e0e0', borderRadius: 6, fontSize: '0.75rem', fontFamily: 'monospace', whiteSpace: 'pre-wrap' as const, wordBreak: 'break-word' as const, overflowX: 'auto' as const, maxHeight: 280, overflowY: 'auto' as const },
-  actionsRow: { display: 'flex', gap: '0.5rem', flexWrap: 'wrap' as const, marginTop: '0.5rem' },
-}
-
-const EVIDENCE_COLORS: Record<string, { background: string; color: string }> = {
-  'officially-documented': { background: '#d4edda', color: '#155724' },
-  'statement-verified': { background: '#cce5ff', color: '#004085' },
-  'inferred': { background: '#fff3cd', color: '#856404' },
-  'community-reported': { background: '#f8d7da', color: '#721c24' },
+const EVIDENCE_TIERS: Record<string, { tier: 1 | 2 | 3 | 4; glyph: string }> = {
+  'officially-documented': { tier: 1, glyph: '●' },
+  'statement-verified': { tier: 2, glyph: '◕' },
+  'inferred': { tier: 3, glyph: '◐' },
+  'community-reported': { tier: 4, glyph: '○' },
 }
 
 function EvidenceBadge({ status }: { status: string | null | undefined }) {
   if (!status) return null
-  const c = EVIDENCE_COLORS[status] ?? { background: '#e9ecef', color: '#333' }
-  return <span style={{ ...s.badge, ...c }}>{status.replace(/-/g, ' ')}</span>
+  const t = EVIDENCE_TIERS[status]
+  if (!t) return <span className="badge badge--neutral">{status.replace(/-/g, ' ')}</span>
+  return (
+    <span className={`badge badge--evidence-${t.tier}`} title={`Evidence tier ${t.tier} of 4`}>
+      <span className="badge__glyph" aria-hidden="true">{t.glyph}</span>
+      {status.replace(/-/g, ' ')}
+    </span>
+  )
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, React.CSSProperties> = {
-    pending: s.badgePending,
-    verified: s.badgeVerified,
-    approved: s.badgeApproved,
-    rejected: s.badgeRejected,
+  const map: Record<string, string> = {
+    pending: styles.badgePending,
+    verified: styles.badgeVerified,
+    approved: styles.badgeApproved,
+    rejected: styles.badgeRejected,
   }
-  return <span style={{ ...s.badge, ...(map[status] ?? { background: '#e9ecef', color: '#333' }) }}>{status}</span>
+  return <span className={`badge ${map[status] ?? 'badge--neutral'}`}>{status}</span>
 }
 
 function Banner({ kind, children }: { kind: 'error' | 'success' | 'notice'; children: React.ReactNode }) {
-  if (kind === 'error') return <div role="alert" style={s.error}>{children}</div>
-  if (kind === 'success') return <div role="status" style={s.success}>{children}</div>
-  return <div role="status" style={s.notice}>{children}</div>
+  const cls = kind === 'error' ? 'alert--error' : kind === 'success' ? 'alert--success' : 'alert--warning'
+  return <div role={kind === 'error' ? 'alert' : 'status'} className={`alert ${cls}`} style={{ marginTop: 8 }}>{children}</div>
 }
 
 function renderJson(value: unknown): string {
@@ -83,16 +56,24 @@ function renderJson(value: unknown): string {
   }
 }
 
+const NAV = [
+  { id: 'queue', label: 'Data Lead queue' },
+  { id: 'retract', label: 'Retract rule version' },
+  { id: 'delivery', label: 'Managed delivery' },
+  { id: 'report', label: 'Report lookup' },
+] as const
+type ViewId = (typeof NAV)[number]['id']
+
 export default function AdminConsole() {
   const [token, setToken] = useState('')
   const [authed, setAuthed] = useState(false)
   const [tokenError, setTokenError] = useState<string | null>(null)
+  const [view, setView] = useState<ViewId>('queue')
 
   function handleSignIn(e: React.FormEvent) {
     e.preventDefault()
     setTokenError(null)
-    const trimmed = token.trim()
-    if (!trimmed) {
+    if (!token.trim()) {
       setTokenError('Enter an admin token to continue.')
       return
     }
@@ -106,29 +87,19 @@ export default function AdminConsole() {
 
   if (!authed) {
     return (
-      <main style={s.page}>
-        <h1 style={s.heading}>Data Steward Console</h1>
-        <p style={s.sub}>Staff-only admin interface. Enter the admin token to load the steward workflows.</p>
-        <form onSubmit={handleSignIn} noValidate style={{ maxWidth: 460 }}>
-          <div style={s.field}>
-            <label style={s.label} htmlFor="admin-token">Admin token</label>
-            <input
-              id="admin-token"
-              type="password"
-              style={s.input}
-              value={token}
-              onChange={e => setToken(e.target.value)}
-              placeholder="ADMIN_TOKEN"
-              autoComplete="off"
-              spellCheck={false}
-            />
+      <main className={styles.page}>
+        <h1 className={styles.sectionTitle}>Data Steward Console</h1>
+        <p className={styles.sub}>Staff-only admin interface. Enter the admin token to load the steward workflows.</p>
+        <form onSubmit={handleSignIn} noValidate>
+          <div className="field">
+            <label className="label" htmlFor="admin-token">Admin token</label>
+            <input id="admin-token" type="password" className="input" value={token}
+              onChange={e => setToken(e.target.value)} placeholder="ADMIN_TOKEN" autoComplete="off" spellCheck={false} />
           </div>
-          <button type="submit" style={!token.trim() ? s.buttonDisabled : s.button} disabled={!token.trim()}>
-            Sign in
-          </button>
+          <button type="submit" className="btn btn--primary" disabled={!token.trim()} style={{ marginTop: 12 }}>Sign in</button>
         </form>
         {tokenError && <Banner kind="error">{tokenError}</Banner>}
-        <p style={{ ...s.sub, marginTop: '1rem', fontSize: '0.75rem' }}>
+        <p className={styles.signInNote}>
           The token is held in memory for this browser session only. It is not stored, logged, or embedded in the page bundle.
         </p>
       </main>
@@ -136,18 +107,41 @@ export default function AdminConsole() {
   }
 
   return (
-    <main style={s.page}>
-      <div style={s.rowInline} className="admin-header">
-        <h1 style={{ ...s.heading, marginBottom: 0 }}>Data Steward Console</h1>
-        <button type="button" style={s.buttonSecondary} onClick={handleSignOut}>Sign out</button>
+    <div className={styles.shell}>
+      <aside className={styles.sidebar}>
+        <div className={styles.brand}>
+          <span className={styles.brandMark} aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 3l7 3v5c0 4.4-3 7.8-7 9-4-1.2-7-4.6-7-9V6l7-3z" />
+              <path d="M9 12l2 2 4-4" />
+            </svg>
+          </span>
+          Steward Console
+        </div>
+        <nav className={styles.nav} aria-label="Console sections">
+          {NAV.map(item => (
+            <button key={item.id} type="button"
+              className={`${styles.navItem} ${view === item.id ? styles.navItemActive : ''}`}
+              aria-current={view === item.id ? 'page' : undefined}
+              onClick={() => setView(item.id)}>
+              {item.label}
+            </button>
+          ))}
+        </nav>
+      </aside>
+      <div className={styles.main}>
+        <header className={styles.topbarMain}>
+          <strong>Data Steward Console</strong>
+          <button type="button" className={`btn btn--secondary btn--sm ${styles.topbarSpacer}`} onClick={handleSignOut}>Sign out</button>
+        </header>
+        <div className={styles.views}>
+          <div hidden={view !== 'queue'}><LeadsSection token={token} /></div>
+          <div hidden={view !== 'retract'}><RetractionSection token={token} /></div>
+          <div hidden={view !== 'delivery'}><ManagedDeliverySection token={token} /></div>
+          <div hidden={view !== 'report'}><ReportDetailSection token={token} /></div>
+        </div>
       </div>
-      <p style={s.sub}>Token held in memory for this session. Closing or refreshing the tab clears it.</p>
-
-      <LeadsSection token={token} />
-      <RetractionSection token={token} />
-      <ManagedDeliverySection token={token} />
-      <ReportDetailSection token={token} />
-    </main>
+    </div>
   )
 }
 
@@ -189,10 +183,11 @@ function LeadsSection({ token }: { token: string }) {
   const { data, loading, error, refresh } = useRefresh<{ leads: AdminLead[] }>(token, '/api/admin/leads')
 
   return (
-    <section style={s.section}>
-      <div style={s.rowInline} className="admin-leads-header">
-        <h2 style={{ ...s.sectionTitle, marginBottom: 0 }}>Data Lead queue</h2>
-        <button type="button" style={s.buttonSecondary} onClick={refresh} disabled={loading}>Refresh</button>
+    <section>
+      <div className={styles.rowInline}>
+        <h2 className={styles.sectionTitle}>Data Lead queue</h2>
+        {data && <span className="badge badge--neutral">{data.leads.length} pending</span>}
+        <button type="button" className={`btn btn--secondary btn--sm ${styles.topbarSpacer}`} onClick={refresh} disabled={loading}>Refresh</button>
       </div>
       {loading && <Banner kind="notice">Loading pending Data Leads…</Banner>}
       {error && <Banner kind="error">{error}</Banner>}
@@ -200,7 +195,7 @@ function LeadsSection({ token }: { token: string }) {
         <Banner kind="success">No pending Data Leads. The queue is empty.</Banner>
       )}
       {!loading && !error && data && data.leads.length > 0 && (
-        <div className="admin-leads-list">
+        <div>
           {data.leads.map(lead => (
             <LeadCard key={lead.id} lead={lead} token={token} onChanged={refresh} />
           ))}
@@ -273,62 +268,62 @@ function LeadCard({ lead, token, onChanged }: { lead: AdminLead; token: string; 
   }
 
   return (
-    <div style={s.card} className="admin-lead-card">
-      <div style={s.rowInline}>
-        <span style={s.cardTitle}>{lead.card.name}</span>
+    <div className={`card ${styles.panel}`}>
+      <div className={styles.rowInline}>
+        <span className={styles.cardTitle}>{lead.card.name}</span>
         <StatusBadge status={lead.status} />
         {verified && <EvidenceBadge status={lead.evidenceStatus} />}
       </div>
-      <div style={s.cardSub}>{lead.card.issuer} · {lead.card.network}</div>
+      <div className={styles.cardSub}>{lead.card.issuer} · {lead.card.network}</div>
 
-      <div style={s.metaRow}><span style={s.metaLabel}>Lead ID</span><code style={{ fontSize: '0.75rem' }}>{lead.id}</code></div>
-      <div style={s.metaRow}><span style={s.metaLabel}>Source URL</span><a href={lead.sourceUrl} target="_blank" rel="noreferrer" style={{ fontSize: '0.8125rem' }}>{lead.sourceUrl}</a></div>
-      <div style={s.metaRow}><span style={s.metaLabel}>Created</span>{formatTimestamp(lead.createdAt)}</div>
-      <div style={s.metaRow}><span style={s.metaLabel}>Evidence status</span>{lead.evidenceStatus ?? 'not verified'}</div>
-      <div style={s.metaRow}><span style={s.metaLabel}>Verification record</span>{lead.verificationRecordId ?? '—'}</div>
+      <div className={styles.metaRow}><span className={styles.metaLabel}>Lead ID</span><code className="mono">{lead.id}</code></div>
+      <div className={styles.metaRow}><span className={styles.metaLabel}>Source URL</span><a href={lead.sourceUrl} target="_blank" rel="noreferrer">{lead.sourceUrl}</a></div>
+      <div className={styles.metaRow}><span className={styles.metaLabel}>Created</span>{formatTimestamp(lead.createdAt)}</div>
+      <div className={styles.metaRow}><span className={styles.metaLabel}>Evidence status</span>{lead.evidenceStatus ?? 'not verified'}</div>
+      <div className={styles.metaRow}><span className={styles.metaLabel}>Verification record</span>{lead.verificationRecordId ?? '—'}</div>
 
-      <button type="button" style={{ ...s.buttonSecondary, marginTop: '0.5rem' }} onClick={() => setExpanded(e => !e)} aria-expanded={expanded}>
+      <button type="button" className="btn btn--secondary btn--sm" style={{ marginTop: 8 }} onClick={() => setExpanded(e => !e)} aria-expanded={expanded}>
         {expanded ? 'Hide proposed Rule data' : 'Show proposed Rule data'}
       </button>
-      {expanded && <pre style={{ ...s.pre, marginTop: '0.5rem' }} className="admin-lead-rule-data">{renderJson(lead.proposedRuleData)}</pre>}
+      {expanded && <pre className={styles.pre} style={{ marginTop: 8 }}>{renderJson(lead.proposedRuleData)}</pre>}
 
-      <div style={{ marginTop: '0.85rem' }}>
-        <div style={s.label}>Verify</div>
-        <div style={s.field}>
-          <label style={{ ...s.label, fontSize: '0.75rem' }} htmlFor={`ev-${lead.id}`}>Evidence status</label>
-          <select id={`ev-${lead.id}`} style={s.select} value={evidenceStatus} onChange={e => setEvidenceStatus(e.target.value as EvidenceStatus)}>
+      <div className={styles.actionGroup}>
+        <div className={styles.actionGroupTitle}>Verify</div>
+        <div className="field">
+          <label className="label" htmlFor={`ev-${lead.id}`}>Evidence status</label>
+          <select id={`ev-${lead.id}`} className="input" value={evidenceStatus} onChange={e => setEvidenceStatus(e.target.value as EvidenceStatus)}>
             {EVIDENCE_STATUSES.map(st => <option key={st} value={st}>{st}</option>)}
           </select>
         </div>
-        <div style={s.field}>
-          <label style={{ ...s.label, fontSize: '0.75rem' }} htmlFor={`notes-${lead.id}`}>Notes (optional)</label>
-          <textarea id={`notes-${lead.id}`} style={s.textarea} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Reviewer notes" />
+        <div className="field">
+          <label className="label" htmlFor={`notes-${lead.id}`}>Notes (optional)</label>
+          <textarea id={`notes-${lead.id}`} className="input" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Reviewer notes" />
         </div>
-        <button type="button" style={busy ? s.buttonDisabled : s.button} onClick={callVerify} disabled={busy}>Verify lead</button>
+        <button type="button" className="btn btn--primary" onClick={callVerify} disabled={busy} style={{ alignSelf: 'flex-start' }}>Verify lead</button>
       </div>
 
-      <div style={{ marginTop: '0.85rem' }}>
-        <div style={s.label}>Approve</div>
+      <div className={styles.actionGroup}>
+        <div className={styles.actionGroupTitle}>Approve</div>
         {verified ? (
           <>
-            <div style={s.field}>
-              <label style={{ ...s.label, fontSize: '0.75rem' }} htmlFor={`eff-${lead.id}`}>Effective from (YYYY-MM-DD)</label>
-              <input id={`eff-${lead.id}`} type="date" style={s.dateInput} value={effectiveFrom} onChange={e => setEffectiveFrom(e.target.value)} />
+            <div className="field">
+              <label className="label" htmlFor={`eff-${lead.id}`}>Effective from (YYYY-MM-DD)</label>
+              <input id={`eff-${lead.id}`} type="date" className="input" value={effectiveFrom} onChange={e => setEffectiveFrom(e.target.value)} />
             </div>
-            <button type="button" style={busy ? s.buttonDisabled : s.button} onClick={callApprove} disabled={busy || !effectiveFrom}>Approve & publish</button>
+            <button type="button" className="btn btn--primary" onClick={callApprove} disabled={busy || !effectiveFrom} style={{ alignSelf: 'flex-start' }}>{'Approve & publish'}</button>
           </>
         ) : (
-          <div style={s.notice}>Verify this lead before it can be approved and published.</div>
+          <Banner kind="notice">Verify this lead before it can be approved and published.</Banner>
         )}
       </div>
 
-      <div style={{ marginTop: '0.85rem' }}>
-        <div style={s.label}>Reject</div>
-        <div style={s.field}>
-          <label style={{ ...s.label, fontSize: '0.75rem' }} htmlFor={`rej-${lead.id}`}>Reason</label>
-          <textarea id={`rej-${lead.id}`} style={s.textarea} value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder="Why is this lead being rejected?" />
+      <div className={styles.actionGroup}>
+        <div className={styles.actionGroupTitle}>Reject</div>
+        <div className="field">
+          <label className="label" htmlFor={`rej-${lead.id}`}>Reason</label>
+          <textarea id={`rej-${lead.id}`} className="input" value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder="Why is this lead being rejected?" />
         </div>
-        <button type="button" style={busy ? s.buttonDisabled : s.buttonSecondary} onClick={callReject} disabled={busy || !rejectReason.trim()}>Reject lead</button>
+        <button type="button" className="btn btn--secondary" onClick={callReject} disabled={busy || !rejectReason.trim()} style={{ alignSelf: 'flex-start' }}>Reject lead</button>
       </div>
 
       {result && <Banner kind={result.kind}>{result.message}</Banner>}
@@ -373,12 +368,12 @@ function RetractionSection({ token }: { token: string }) {
   }
 
   return (
-    <section style={s.section}>
-      <div style={s.rowInline}>
-        <h2 style={{ ...s.sectionTitle, marginBottom: 0 }}>Retract a published Rule Version</h2>
-        <button type="button" style={s.buttonSecondary} onClick={refresh} disabled={loading}>Refresh</button>
+    <section>
+      <div className={styles.rowInline}>
+        <h2 className={styles.sectionTitle}>Retract a published Rule Version</h2>
+        <button type="button" className={`btn btn--secondary btn--sm ${styles.topbarSpacer}`} onClick={refresh} disabled={loading}>Refresh</button>
       </div>
-      <p style={{ ...s.sub, marginBottom: '0.75rem' }}>Current (non-retracted) Rule Versions come from the Versioned Catalog export.</p>
+      <p className={styles.sub}>Current (non-retracted) Rule Versions come from the Versioned Catalog export.</p>
       {loading && <Banner kind="notice">Loading current Rule Versions…</Banner>}
       {error && <Banner kind="error">{error}</Banner>}
       {!loading && !error && versions.length === 0 && (
@@ -386,9 +381,9 @@ function RetractionSection({ token }: { token: string }) {
       )}
       {!loading && !error && versions.length > 0 && (
         <>
-          <div style={s.field}>
-            <label style={s.label} htmlFor="rv-select">Rule Version</label>
-            <select id="rv-select" style={s.select} value={selectedId} onChange={e => setSelectedOverride(e.target.value)}>
+          <div className="field">
+            <label className="label" htmlFor="rv-select">Rule Version</label>
+            <select id="rv-select" className="input" value={selectedId} onChange={e => setSelectedOverride(e.target.value)}>
               {versions.map(({ rv, card }) => {
                 const label = `${card.name} (${card.issuer}) — effective ${rv.effectiveFrom}${rv.effectiveTo ? ` to ${rv.effectiveTo}` : ' (open)'} [${rv.id}]`
                 return (
@@ -398,22 +393,22 @@ function RetractionSection({ token }: { token: string }) {
             </select>
           </div>
           {selected && (
-            <div style={s.card}>
-              <div style={s.metaRow}><span style={s.metaLabel}>Card</span>{selected.card.name} · {selected.card.issuer}</div>
-              <div style={s.metaRow}><span style={s.metaLabel}>Effective from</span>{selected.rv.effectiveFrom}</div>
-              <div style={s.metaRow}><span style={s.metaLabel}>Effective to</span>{selected.rv.effectiveTo ?? 'open'}</div>
-              <div style={s.metaRow}><span style={s.metaLabel}>Evidence</span><EvidenceBadge status={selected.rv.evidenceStatus} /></div>
-              <details style={{ marginTop: '0.4rem' }}>
-                <summary style={{ fontSize: '0.8125rem', cursor: 'pointer', color: '#555' }}>Rule data</summary>
-                <pre style={{ ...s.pre, marginTop: '0.4rem' }} className="admin-rv-rule-data">{renderJson(selected.rv.ruleData)}</pre>
+            <div className={`card ${styles.panel}`} style={{ marginTop: 12 }}>
+              <div className={styles.metaRow}><span className={styles.metaLabel}>Card</span>{selected.card.name} · {selected.card.issuer}</div>
+              <div className={styles.metaRow}><span className={styles.metaLabel}>Effective from</span>{selected.rv.effectiveFrom}</div>
+              <div className={styles.metaRow}><span className={styles.metaLabel}>Effective to</span>{selected.rv.effectiveTo ?? 'open'}</div>
+              <div className={styles.metaRow}><span className={styles.metaLabel}>Evidence</span><EvidenceBadge status={selected.rv.evidenceStatus} /></div>
+              <details style={{ marginTop: 8 }}>
+                <summary className="hint" style={{ cursor: 'pointer' }}>Rule data</summary>
+                <pre className={styles.pre} style={{ marginTop: 8 }}>{renderJson(selected.rv.ruleData)}</pre>
               </details>
             </div>
           )}
-          <div style={s.field}>
-            <label style={s.label} htmlFor="retract-reason">Reason (required)</label>
-            <textarea id="retract-reason" style={s.textarea} value={reason} onChange={e => setReason(e.target.value)} placeholder="Why is this Rule Version being retracted?" />
+          <div className="field" style={{ marginTop: 12 }}>
+            <label className="label" htmlFor="retract-reason">Reason (required)</label>
+            <textarea id="retract-reason" className="input" value={reason} onChange={e => setReason(e.target.value)} placeholder="Why is this Rule Version being retracted?" />
           </div>
-          <button type="button" style={busy ? s.buttonDisabled : s.button} onClick={callRetract} disabled={busy || !reason.trim() || !selectedId}>Retract Rule Version</button>
+          <button type="button" className="btn btn--primary" onClick={callRetract} disabled={busy || !reason.trim() || !selectedId} style={{ marginTop: 12 }}>Retract Rule Version</button>
           {result && <Banner kind={result.kind}>{result.message}</Banner>}
         </>
       )}
@@ -447,29 +442,29 @@ function ManagedDeliverySection({ token }: { token: string }) {
   }
 
   return (
-    <section style={s.section}>
-      <h2 style={s.sectionTitle}>Managed delivery</h2>
-      <div style={s.card}>
-        <div style={s.cardTitle}>Versioned Catalog</div>
-        <div style={s.cardSub}>Download the current Versioned Catalog as JSON.</div>
-        <button type="button" style={catalogBusy ? s.buttonDisabled : s.button} onClick={downloadCatalog} disabled={catalogBusy}>
+    <section>
+      <h2 className={styles.sectionTitle}>Managed delivery</h2>
+      <div className={`card ${styles.panel}`} style={{ marginTop: 12 }}>
+        <div className={styles.cardTitle}>Versioned Catalog</div>
+        <div className={styles.cardSub}>Download the current Versioned Catalog as JSON.</div>
+        <button type="button" className="btn btn--primary" onClick={downloadCatalog} disabled={catalogBusy}>
           {catalogBusy ? 'Downloading…' : 'Download catalog'}
         </button>
       </div>
-      <div style={s.card}>
-        <div style={s.cardTitle}>Change Feed</div>
-        <div style={s.cardSub}>Download a bounded Change Feed for an explicit since/until range.</div>
-        <div style={s.rowInline} className="admin-change-feed-controls">
-          <div style={s.field}>
-            <label style={s.label} htmlFor="feed-since">Since (YYYY-MM-DD)</label>
-            <input id="feed-since" type="date" style={s.dateInput} value={since} onChange={e => setSince(e.target.value)} />
+      <div className={`card ${styles.panel}`}>
+        <div className={styles.cardTitle}>Change Feed</div>
+        <div className={styles.cardSub}>Download a bounded Change Feed for an explicit since/until range.</div>
+        <div className={styles.rowInline}>
+          <div className="field">
+            <label className="label" htmlFor="feed-since">Since (YYYY-MM-DD)</label>
+            <input id="feed-since" type="date" className="input" value={since} onChange={e => setSince(e.target.value)} />
           </div>
-          <div style={s.field}>
-            <label style={s.label} htmlFor="feed-until">Until (YYYY-MM-DD)</label>
-            <input id="feed-until" type="date" style={s.dateInput} value={until} onChange={e => setUntil(e.target.value)} />
+          <div className="field">
+            <label className="label" htmlFor="feed-until">Until (YYYY-MM-DD)</label>
+            <input id="feed-until" type="date" className="input" value={until} onChange={e => setUntil(e.target.value)} />
           </div>
         </div>
-        <button type="button" style={feedBusy ? s.buttonDisabled : s.button} onClick={downloadFeed} disabled={feedBusy}>
+        <button type="button" className="btn btn--primary" onClick={downloadFeed} disabled={feedBusy} style={{ marginTop: 12 }}>
           {feedBusy ? 'Downloading…' : 'Download change feed'}
         </button>
       </div>
@@ -497,67 +492,65 @@ function ReportDetailSection({ token }: { token: string }) {
   }
 
   return (
-    <section style={s.section}>
-      <h2 style={s.sectionTitle}>Contextual Report detail</h2>
-      <p style={{ ...s.sub, marginBottom: '0.75rem' }}>Open a Contextual Report to review its card, Rule Version, evidence, and stored Calculation Trace context.</p>
-      <div style={s.rowInline}>
-        <div style={{ ...s.field, marginBottom: 0, flex: 1, minWidth: 240 }}>
-          <label style={s.label} htmlFor="report-id">Report ID</label>
-          <input id="report-id" style={s.input} value={reportId} onChange={e => setReportId(e.target.value)} placeholder="report id" />
+    <section>
+      <h2 className={styles.sectionTitle}>Contextual Report detail</h2>
+      <p className={styles.sub}>Open a Contextual Report to review its card, Rule Version, evidence, and stored Calculation Trace context.</p>
+      <div className={styles.rowInline}>
+        <div className="field" style={{ flex: 1, minWidth: 240 }}>
+          <label className="label" htmlFor="report-id">Report ID</label>
+          <input id="report-id" className="input" value={reportId} onChange={e => setReportId(e.target.value)} placeholder="report id" />
         </div>
-        <button type="button" style={loading ? s.buttonDisabled : s.button} onClick={load} disabled={loading} className="admin-report-load">
+        <button type="button" className="btn btn--primary" onClick={load} disabled={loading} style={{ alignSelf: 'flex-end' }}>
           {loading ? 'Loading…' : 'Open report'}
         </button>
       </div>
       {error && <Banner kind="error">{error}</Banner>}
       {report && (
-        <div style={s.card} className="admin-report-detail">
-          <div style={s.rowInline}>
-            <span style={s.cardTitle}>Report {report.id}</span>
-          </div>
-          <div style={s.metaRow}><span style={s.metaLabel}>Card</span>{report.card.name} · {report.card.issuer} · {report.card.network}</div>
-          <div style={s.metaRow}><span style={s.metaLabel}>Created</span>{formatTimestamp(report.createdAt)}</div>
-          <div style={s.metaRow}><span style={s.metaLabel}>Source URL</span>{report.sourceUrl ?? '—'}</div>
-          <div style={{ marginTop: '0.5rem' }}>
-            <div style={s.label}>Description</div>
-            <div style={{ fontSize: '0.875rem' }}>{report.description}</div>
+        <div className={`card ${styles.panel}`} style={{ marginTop: 12 }}>
+          <span className={styles.cardTitle}>Report {report.id}</span>
+          <div className={styles.metaRow}><span className={styles.metaLabel}>Card</span>{report.card.name} · {report.card.issuer} · {report.card.network}</div>
+          <div className={styles.metaRow}><span className={styles.metaLabel}>Created</span>{formatTimestamp(report.createdAt)}</div>
+          <div className={styles.metaRow}><span className={styles.metaLabel}>Source URL</span>{report.sourceUrl ?? '—'}</div>
+          <div className={styles.actionGroup}>
+            <div className={styles.actionGroupTitle}>Description</div>
+            <div>{report.description}</div>
           </div>
           {report.ruleVersion ? (
-            <div style={{ marginTop: '0.75rem' }}>
-              <div style={s.label}>Rule Version</div>
-              <div style={s.metaRow}><span style={s.metaLabel}>ID</span><code style={{ fontSize: '0.75rem' }}>{report.ruleVersion.id}</code></div>
-              <div style={s.metaRow}><span style={s.metaLabel}>Effective</span>{report.ruleVersion.effectiveFrom} → {report.ruleVersion.effectiveTo ?? 'open'}</div>
-              <div style={s.metaRow}><span style={s.metaLabel}>Retracted</span>{report.ruleVersion.retractedAt ? formatTimestamp(report.ruleVersion.retractedAt) : 'no'}</div>
-              <details style={{ marginTop: '0.4rem' }}>
-                <summary style={{ fontSize: '0.8125rem', cursor: 'pointer', color: '#555' }}>Rule data</summary>
-                <pre style={{ ...s.pre, marginTop: '0.4rem' }} className="admin-report-rule-data">{renderJson(report.ruleVersion.ruleData)}</pre>
+            <div className={styles.actionGroup}>
+              <div className={styles.actionGroupTitle}>Rule Version</div>
+              <div className={styles.metaRow}><span className={styles.metaLabel}>ID</span><code className="mono">{report.ruleVersion.id}</code></div>
+              <div className={styles.metaRow}><span className={styles.metaLabel}>Effective</span>{report.ruleVersion.effectiveFrom} → {report.ruleVersion.effectiveTo ?? 'open'}</div>
+              <div className={styles.metaRow}><span className={styles.metaLabel}>Retracted</span>{report.ruleVersion.retractedAt ? formatTimestamp(report.ruleVersion.retractedAt) : 'no'}</div>
+              <details style={{ marginTop: 8 }}>
+                <summary className="hint" style={{ cursor: 'pointer' }}>Rule data</summary>
+                <pre className={styles.pre} style={{ marginTop: 8 }}>{renderJson(report.ruleVersion.ruleData)}</pre>
               </details>
             </div>
           ) : (
-            <div style={{ marginTop: '0.75rem' }}>
-              <div style={s.label}>Rule Version</div>
-              <div style={{ fontSize: '0.875rem', color: '#555' }}>No Rule Version linked to this report.</div>
+            <div className={styles.actionGroup}>
+              <div className={styles.actionGroupTitle}>Rule Version</div>
+              <div className={styles.sub}>No Rule Version linked to this report.</div>
             </div>
           )}
           {report.verificationRecord ? (
-            <div style={{ marginTop: '0.75rem' }}>
-              <div style={s.label}>Evidence</div>
-              <div style={s.metaRow}><span style={s.metaLabel}>Status</span><EvidenceBadge status={report.verificationRecord.evidenceStatus} /></div>
-              <div style={s.metaRow}><span style={s.metaLabel}>Verified</span>{formatTimestamp(report.verificationRecord.verifiedAt)}</div>
-              <div style={s.metaRow}><span style={s.metaLabel}>Notes</span>{report.verificationRecord.notes ?? '—'}</div>
+            <div className={styles.actionGroup}>
+              <div className={styles.actionGroupTitle}>Evidence</div>
+              <div className={styles.metaRow}><span className={styles.metaLabel}>Status</span><EvidenceBadge status={report.verificationRecord.evidenceStatus} /></div>
+              <div className={styles.metaRow}><span className={styles.metaLabel}>Verified</span>{formatTimestamp(report.verificationRecord.verifiedAt)}</div>
+              <div className={styles.metaRow}><span className={styles.metaLabel}>Notes</span>{report.verificationRecord.notes ?? '—'}</div>
             </div>
           ) : (
-            <div style={{ marginTop: '0.75rem' }}>
-              <div style={s.label}>Evidence</div>
-              <div style={{ fontSize: '0.875rem', color: '#555' }}>No verification record.</div>
+            <div className={styles.actionGroup}>
+              <div className={styles.actionGroupTitle}>Evidence</div>
+              <div className={styles.sub}>No verification record.</div>
             </div>
           )}
-          <div style={{ marginTop: '0.75rem' }}>
-            <div style={s.label}>Calculation Trace context</div>
+          <div className={styles.actionGroup}>
+            <div className={styles.actionGroupTitle}>Calculation Trace context</div>
             {report.traceContext === null || report.traceContext === undefined ? (
-              <div style={{ fontSize: '0.875rem', color: '#555' }}>No trace context stored on this report.</div>
+              <div className={styles.sub}>No trace context stored on this report.</div>
             ) : (
-              <pre style={s.pre} className="admin-report-trace-context">{renderJson(report.traceContext)}</pre>
+              <pre className={styles.pre}>{renderJson(report.traceContext)}</pre>
             )}
           </div>
         </div>

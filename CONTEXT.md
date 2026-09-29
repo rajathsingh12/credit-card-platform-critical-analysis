@@ -36,9 +36,9 @@ _Avoid_: Guest account, anonymous profile
 The purchase information needed to evaluate a Transaction Decision: amount, merchant or category, payment channel, and relevant month-to-date spend.
 _Avoid_: MCC input, transaction history
 
-**Net Return**:
-The value delivered by a card after considering its rewards and the card's associated costs.
-_Avoid_: Reward rate, annual-fee waiver
+**Reward Value**:
+The reward earned on a single transaction — points earned times their redemption value (`grossReturnCents`). The annual fee is a fixed holding cost surfaced separately (`annualFeeCents`), not netted into this figure; ranking is by Reward Value.
+_Avoid_: Net Return (fee-amortized), fee-adjusted return, reward rate, annual-fee waiver
 
 **Redemption Scenario**:
 A dated, sourced way to exchange a variable-value reward for a stated benefit.
