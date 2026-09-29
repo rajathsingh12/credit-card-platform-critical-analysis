@@ -109,14 +109,14 @@ export const VERIFIED_CARD_SET: SeedCard[] = [
     rewardCurrency: 'issuer-points',
     annualFeeCents: 250000,
     evidenceStatus: 'officially-documented',
-    sourceName: 'HDFC Bank Regalia Gold product terms and conditions',
+    sourceName: 'HDFC Bank Regalia Gold revised terms (effective 2026-05-15)',
     sourceUrl: 'https://www.hdfcbank.com/personal/pay/cards/credit-cards/regalia-gold',
     ruleData: {
       ruleType: 'variable',
       categories: [],
       exclusions: BASE_EXCLUSIONS,
-      pointsPerDollar: 0.026667,
-      capPoints: null,
+      pointsPerDollar: 0.025, // 5 RP / ₹200; was 4 RP / ₹150 (0.026667) pre-2026-05-15
+      capPoints: null, // ponytail: monthly 2,000 RP cap exists but needs month-to-date engine work (ticket 33)
     },
     redemptions: portalAndCatalogue(50, 20),
   },
