@@ -12,6 +12,8 @@
     "migrate": "tsx scripts/migrate.ts",
     "seed": "tsx scripts/seed-verified-cards.ts",
     "verify:seed": "tsx scripts/verify-seed.ts",
+    "seed:strategies": "tsx scripts/seed-strategies.ts",
+    "verify:strategies": "tsx scripts/verify-strategies.ts",
     "seed:invites": "tsx scripts/seed-invites.ts",
     "up": "docker compose up --build -d",
     "down": "docker compose down",

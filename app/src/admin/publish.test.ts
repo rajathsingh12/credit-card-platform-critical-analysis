@@ -118,6 +118,18 @@ describe('publishLead', () => {
     ])
   })
 
+  it('closes only the active version of the same rule type, so a route fact does not retire the base rule', async () => {
+    const { pool, queries } = makeFakePool({
+      lead: { ...PENDING_LEAD, proposed_rule_data: { ruleType: 'route-fact', pointsPerDollar: 0 } },
+    })
+
+    const result = await publishLead(pool, 'lead-1', '2026-01-01')
+
+    expect(result.ok).toBe(true)
+    const close = queries.find(sql => sql.includes('UPDATE rule_versions'))
+    expect(close).toContain("rule_data->>'ruleType'")
+  })
+
   it('rolls back and returns lead-not-found when the lead does not exist', async () => {
     const { pool, shape } = makeFakePool({ lead: null })
 

@@ -36,7 +36,7 @@ async function main() {
        FROM rule_versions rv
        JOIN cards c ON c.id = rv.card_id
        JOIN verification_records vr ON vr.id = rv.verification_record_id
-       WHERE rv.effective_to IS NULL`
+       WHERE rv.effective_to IS NULL AND rv.rule_data->>'ruleType' <> 'route-fact'`
     )
   ).rows
 
@@ -53,8 +53,9 @@ async function main() {
     await pool.query(
       `SELECT c.issuer, c.name, count(rv.id)::int AS versions
        FROM cards c
-       LEFT JOIN rule_versions rv ON rv.card_id = c.id
+       LEFT JOIN rule_versions rv ON rv.card_id = c.id AND rv.retracted_at IS NULL
        JOIN data_leads dl ON dl.card_id = c.id AND dl.status = 'pending'
+         AND dl.proposed_rule_data->>'ruleType' IS DISTINCT FROM 'route-fact'
        GROUP BY c.issuer, c.name`
     )
   ).rows

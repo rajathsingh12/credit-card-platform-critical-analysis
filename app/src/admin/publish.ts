@@ -100,12 +100,15 @@ export async function publishLead(
       throw new PublishAbort({ ok: false, code: 'evidence-below-standard', error: evidence.error })
     }
 
-    // Close the current active version (effective_to NULL → day before new version starts).
+    // Close the active version of the same rule type only. A route-fact is a
+    // second rule, not a replacement for the card's base earn rule, so it must
+    // not retire it (and a base-rule update must not retire the route fact).
     await client.query(
       `UPDATE rule_versions
        SET effective_to = $1::date - 1
-       WHERE card_id = $2 AND effective_to IS NULL`,
-      [effectiveFrom, lead.card_id]
+       WHERE card_id = $2 AND effective_to IS NULL
+         AND rule_data->>'ruleType' IS NOT DISTINCT FROM $3::jsonb->>'ruleType'`,
+      [effectiveFrom, lead.card_id, JSON.stringify(lead.proposed_rule_data)]
     )
 
     const rvRes = await client.query(
