@@ -28,6 +28,10 @@ _Avoid_: New applicant, lead
 A cardholder's choice of which card to use for a purchase, based on the applicable transaction outcome and its supporting evidence.
 _Avoid_: Card recommendation, best-card ranking
 
+**Payment Strategy**:
+The way a Cardholder executes a single purchase to maximise Reward Value — either a direct card payment or a multi-step route (e.g. card → voucher → merchant) that composes more than one Transaction Outcome. A deferred Phase-6 capability that extends the Consumer Wedge; see `docs/adr/0006-payment-strategy-deferred-phase-6.md`.
+_Avoid_: Recommendation, best card/route, payment hack, effective cost
+
 **Zero-Login Calculation**:
 A transaction decision produced from manually supplied card and purchase details without creating an account or connecting a financial institution.
 _Avoid_: Guest account, anonymous profile
@@ -169,5 +173,5 @@ A human-supported supply of a Versioned Catalog and Change Feed without a public
 _Avoid_: Real-time API, self-serve integration
 
 **Portfolio Optimization**:
-A future, opt-in comparison of a Cardholder's saved cards and manually entered spending patterns to improve multiple Transaction Decisions together.
+A future, opt-in comparison of a Cardholder's saved cards and manually entered spending patterns to improve multiple Transaction Decisions together. Distinct from a Payment Strategy, which optimises a single purchase; Portfolio Optimization spans many Transaction Decisions.
 _Avoid_: Bank-linked optimization, auto-switching
