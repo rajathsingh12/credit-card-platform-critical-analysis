@@ -31,6 +31,16 @@ describe('rankResults', () => {
   it('returns an empty list for no results', () => {
     expect(rankResults([])).toEqual([])
   })
+
+  it('ranks by the direct reward value, ignoring a strategy attached to a card', () => {
+    const withStrategy: Input = {
+      ...resolved('low', 100),
+      paymentStrategies: [{ resolved: true, strategyId: 'route', kind: 'route', rewardValueCents: 9_999, legs: [], legResults: [], trace }],
+    }
+    const out = rankResults([withStrategy, resolved('high', 500)])
+    expect(out.map(r => r.card.id)).toEqual(['high', 'low'])
+    expect(out).toHaveLength(2)
+  })
 })
 
 describe('toggleItem', () => {

@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { pool } from '@/db/client'
 import { calculate } from '@/engine/calculate'
 import { toEngineRuleVersion, toEngineScenario, toIsoDate } from '@/catalog/db-mapping'
+import type { EvidenceStatus } from '@/catalog/evidence'
 import type { TransactionContext, CalcResult } from '@/engine/types'
 import { validateCalculateInput } from './validate'
 import { BETA_COOKIE } from '@/beta/invite'
 import { logEvent, sessionDecisionCount } from '@/telemetry/events-db'
+import { strategiesForCard, type RouteFactRecord } from '@/strategy/applicable'
+import { isRouteFactRuleData } from '@/strategy/route-fact'
 
 export const runtime = 'nodejs'
 
@@ -40,11 +43,22 @@ export async function POST(request: NextRequest) {
     ),
   ])
 
-  const rules = rulesResult.rows.map(toEngineRuleVersion)
+  const rules = rulesResult.rows.filter(row => !isRouteFactRuleData(row.rule_data)).map(toEngineRuleVersion)
   const scenarios = scenariosResult.rows.map(toEngineScenario)
+  const routeFacts: RouteFactRecord[] = rulesResult.rows.filter(row => isRouteFactRuleData(row.rule_data)).map(row => ({
+    id: row.id,
+    cardId: row.card_id,
+    effectiveFrom: row.effective_from,
+    effectiveTo: row.effective_to,
+    ruleData: row.rule_data,
+    evidenceStatus: row.evidence_status as EvidenceStatus,
+    retractedAt: row.retracted_at ? new Date(row.retracted_at).toISOString() : null,
+  }))
 
   const ruleMeta: Record<string, { evidenceStatus: string; sourceDate: string; retractedAt: string | null }> = {}
   for (const row of rulesResult.rows) {
+    // Route facts price strategies, not the direct result, so they stay out of its meta.
+    if (isRouteFactRuleData(row.rule_data)) continue
     ruleMeta[row.id] = {
       evidenceStatus: row.evidence_status,
       sourceDate: toIsoDate(row.verified_at),
@@ -75,12 +89,19 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  const directRewardCents = result.resolved ? result.grossReturnCents : null
+  const paymentStrategies = strategiesForCard(context, routeFacts, scenarios, directRewardCents)
+
   const sessionToken = request.cookies.get(BETA_COOKIE)?.value
   if (sessionToken) {
     void emitDecisionEvents(sessionToken, cardId, result)
   }
 
-  return NextResponse.json({ result, ruleMeta })
+  return NextResponse.json({
+    result,
+    ruleMeta,
+    ...(paymentStrategies.length > 0 ? { paymentStrategies } : {}),
+  })
 }
 
 async function emitDecisionEvents(

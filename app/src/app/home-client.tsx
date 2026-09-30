@@ -3,11 +3,19 @@
 import { useEffect, useId, useState } from 'react'
 import type { CalcResult, TraceEntry } from '@/engine/types'
 import type { EvidenceStatus } from '@/catalog/evidence'
+import type { ComposedStrategy } from '@/strategy/compose'
+import { strategyAnnotation } from './strategy-annotation'
 import s from './home-client.module.css'
 
 type CardOption = { id: string; name: string; issuer: string; rewardCurrency: string }
 type RuleMeta = { evidenceStatus: string; sourceDate: string; retractedAt?: string | null }
-type CardResult = { card: CardOption; result: CalcResult; ruleMeta: Record<string, RuleMeta> }
+type CardResult = {
+  card: CardOption
+  result: CalcResult
+  ruleMeta: Record<string, RuleMeta>
+  /** Curated Payment Strategies for this card. Absent when the API has none. */
+  paymentStrategies?: ComposedStrategy[]
+}
 
 const CATEGORIES = [
   { value: 'dining', label: 'Dining' },
@@ -101,6 +109,17 @@ function EvidenceBadge({ status }: { status: string | undefined }) {
 
 function RetractedBadge() {
   return <span className="badge badge--retracted">✕ Rule retracted</span>
+}
+
+/** A Payment Strategy rendered on the card it belongs to, never as its own ranking row. */
+export function StrategyAnnotation({ strategy }: { strategy: ComposedStrategy }) {
+  const { label, text } = strategyAnnotation(strategy)
+  return (
+    <div className={s.strategy}>
+      <span className="badge badge--neutral">{label}</span>
+      <p className={strategy.resolved ? s.strategyValue : s.unresolvedReason}>{text}</p>
+    </div>
+  )
 }
 
 function Field({
@@ -250,6 +269,7 @@ function BarRow({ r, pct, open, onToggle }: { r: Ranked; pct: number | null; ope
         {entry?.assumptions.map((a, i) => <p key={i} className={s.assumption}>{a}</p>)}
         <span className={`hint ${s.rowToggle}`}>{open ? '▾ Hide calculation' : '▸ Show calculation'}</span>
       </button>
+      {r.paymentStrategies?.map(strategy => <StrategyAnnotation key={strategy.strategyId} strategy={strategy} />)}
       {open && <Receipt entries={res.trace.entries} ruleMeta={r.ruleMeta} cardId={r.card.id} />}
     </li>
   )
@@ -365,7 +385,12 @@ export default function HomeClient() {
           const data = await res.json()
           if (!res.ok) throw new Error(data.error ?? 'Calculation failed')
           const card = cards.find(c => c.id === cardId)!
-          return { card, result: data.result as CalcResult, ruleMeta: (data.ruleMeta ?? {}) as Record<string, RuleMeta> }
+          return {
+            card,
+            result: data.result as CalcResult,
+            ruleMeta: (data.ruleMeta ?? {}) as Record<string, RuleMeta>,
+            ...(data.paymentStrategies ? { paymentStrategies: data.paymentStrategies as ComposedStrategy[] } : {}),
+          }
         })
       )
       setResults(responses)
