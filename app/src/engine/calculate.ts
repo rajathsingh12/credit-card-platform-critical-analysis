@@ -7,6 +7,7 @@ import type {
   TraceEntry,
   RedemptionScenario,
 } from './types'
+import { periodKey, applyPeriodicCap } from './periodic-cap'
 
 function isEffective(rule: RuleVersion, date: string): boolean {
   return rule.effectiveFrom <= date && (rule.effectiveTo === null || rule.effectiveTo >= date)
@@ -138,6 +139,63 @@ export function calculate(
       ? selectScenario(context, scenarios)
       : null
 
+  // --- periodic cap ---
+  // Applied to the winning rule only. If the rule declares a periodicCap,
+  // we reduce its pointsAfterCap by whatever capacity remains in the period.
+  // Missing or untrusted usage → UnresolvedOutcome (built after trace).
+  let periodicCapTrace: TraceEntry['periodicCapTrace'] | undefined
+  let periodicCapUnresolved: string | null = null
+  let finalPoints = best?.pointsAfterCap ?? 0
+
+  if (best !== null && best.rule.ruleData.periodicCap) {
+    const config = best.rule.ruleData.periodicCap
+    const pk = periodKey(context.transactionDate, config)
+    const usage = context.periodicUsage?.[best.rule.id]
+    const capResult = applyPeriodicCap(best.pointsAfterCap, config, usage, pk)
+
+    switch (capResult.status) {
+      case 'applied':
+        finalPoints = capResult.pointsAfterPeriodicCap
+        periodicCapTrace = {
+          periodKey: pk,
+          maxPoints: config.maxPoints,
+          priorUsage: capResult.priorUsage,
+          remainingBefore: capResult.remaining,
+          pointsAfterPeriodicCap: capResult.pointsAfterPeriodicCap,
+          trusted: true,
+        }
+        if (capResult.pointsAfterPeriodicCap < best.pointsAfterCap) {
+          best.assumptions.push(
+            `periodic ${config.period} cap: ${capResult.priorUsage}/${config.maxPoints} used, ` +
+            `${capResult.remaining} remaining; earned capped from ${best.pointsAfterCap} to ${capResult.pointsAfterPeriodicCap}`
+          )
+        }
+        break
+      case 'untrusted':
+        periodicCapTrace = {
+          periodKey: pk,
+          maxPoints: config.maxPoints,
+          priorUsage: capResult.priorUsage,
+          remainingBefore: capResult.remaining,
+          pointsAfterPeriodicCap: finalPoints, // not adjusted — untrusted
+          trusted: false,
+        }
+        periodicCapUnresolved = `periodic usage for rule ${best.rule.id} in period ${pk} is untrusted`
+        break
+      case 'missing-usage':
+        periodicCapTrace = {
+          periodKey: pk,
+          maxPoints: config.maxPoints,
+          priorUsage: 0,
+          remainingBefore: config.maxPoints,
+          pointsAfterPeriodicCap: finalPoints,
+          trusted: false,
+        }
+        periodicCapUnresolved = `periodic usage for rule ${best.rule.id} in period ${pk} is missing`
+        break
+    }
+  }
+
   const entries: TraceEntry[] = results.map(r => {
     const isApplied = best !== null && r.rule.id === best.rule.id
     if (isApplied && selection !== null && selection.poolSize > 1) {
@@ -145,7 +203,7 @@ export function calculate(
         `selected scenario ${selection.scenario.id}: highest centsPerPoint (${selection.scenario.centsPerPoint}) among ${selection.poolSize} covering scenarios`
       )
     }
-    return {
+    const entry: TraceEntry = {
       ruleId: r.rule.id,
       ruleEffectiveFrom: r.rule.effectiveFrom,
       applied: isApplied,
@@ -163,9 +221,25 @@ export function calculate(
       pointsBeforeCap: r.pointsBeforeCap,
       pointsAfterCap: r.pointsAfterCap,
     }
+    if (isApplied && periodicCapTrace) {
+      entry.periodicCapTrace = periodicCapTrace
+    }
+    return entry
   })
 
   const trace = { transactionId: context.transactionId, entries }
+
+  // Periodic cap unresolved takes precedence — we can't state a value.
+  if (periodicCapUnresolved !== null && best !== null) {
+    return {
+      resolved: false,
+      transactionId: context.transactionId,
+      reason: periodicCapUnresolved,
+      rewardsEarned: best.pointsAfterCap, // pre-periodic-cap points (best known)
+      ruleApplied: best.rule.id,
+      trace,
+    } satisfies UnresolvedOutcome
+  }
 
   if (best !== null && best.rule.ruleData.ruleType === 'variable') {
     if (selection === null) {
@@ -173,7 +247,7 @@ export function calculate(
         resolved: false,
         transactionId: context.transactionId,
         reason: 'no Redemption Scenario covers this transaction',
-        rewardsEarned: best.pointsAfterCap,
+        rewardsEarned: finalPoints,
         ruleApplied: best.rule.id,
         trace,
       } satisfies UnresolvedOutcome
@@ -182,10 +256,10 @@ export function calculate(
     return {
       resolved: true,
       transactionId: context.transactionId,
-      rewardsEarned: best.pointsAfterCap,
+      rewardsEarned: finalPoints,
       ruleApplied: best.rule.id,
       scenarioApplied: scenario.id,
-      grossReturnCents: Math.round(best.pointsAfterCap * scenario.centsPerPoint),
+      grossReturnCents: Math.round(finalPoints * scenario.centsPerPoint),
       annualFeeCents: scenario.annualFeeCents,
       trace,
     } satisfies TransactionOutcome
@@ -194,7 +268,7 @@ export function calculate(
   return {
     resolved: true,
     transactionId: context.transactionId,
-    rewardsEarned: best?.pointsAfterCap ?? 0,
+    rewardsEarned: finalPoints,
     ruleApplied: best?.rule.id ?? null,
     scenarioApplied: null,
     grossReturnCents: null,

@@ -6,6 +6,41 @@ export interface TransactionContext {
   merchantCategory: MerchantCategory
   merchantName: string
   transactionDate: string // YYYY-MM-DD
+  /**
+   * Prior periodic usage per rule, keyed by RuleVersion.id.
+   * Omit or leave undefined for rules without a periodic cap.
+   * When a rule has a periodic cap but its entry is missing here,
+   * the engine yields an UnresolvedOutcome.
+   */
+  periodicUsage?: Record<string, PeriodicUsageEntry>
+}
+
+// ---------------------------------------------------------------------------
+// Periodic cap
+// ---------------------------------------------------------------------------
+
+export type CapPeriod = 'monthly' | 'quarterly' | 'annual'
+
+/**
+ * Declares a periodic (month-to-date / quarter / annual) cap on a Reward Rule.
+ * Points earned under this rule across the period are capped at `maxPoints`;
+ * a transaction that would cross the cap earns only the remaining capacity.
+ */
+export interface PeriodicCapConfig {
+  period: CapPeriod
+  maxPoints: number // non-negative integer
+  resetBasis: 'calendar' // resets on calendar boundaries (1st of month / quarter / year)
+  timezone: string // IANA timezone for boundary computation, e.g. 'Asia/Kolkata'
+}
+
+/**
+ * Prior cumulative usage for one rule within the current period,
+ * supplied by the caller (zero-login flow: manually entered).
+ */
+export interface PeriodicUsageEntry {
+  periodKey: string // e.g. '2024-06', '2024-Q2', '2024'
+  pointsUsed: number // non-negative integer; points already earned this period
+  trusted: boolean // false → engine yields UnresolvedOutcome
 }
 
 export interface DirectRewardRuleData {
@@ -14,6 +49,7 @@ export interface DirectRewardRuleData {
   exclusions: MerchantCategory[]
   pointsPerDollar: number // e.g. 3 = 3 points per dollar spent
   capPoints: number | null // null = no per-transaction cap
+  periodicCap?: PeriodicCapConfig // null/undefined = no periodic cap
 }
 
 export interface VariableRewardRuleData {
@@ -22,6 +58,7 @@ export interface VariableRewardRuleData {
   exclusions: MerchantCategory[]
   pointsPerDollar: number
   capPoints: number | null
+  periodicCap?: PeriodicCapConfig // null/undefined = no periodic cap
 }
 
 export type RewardRuleData = DirectRewardRuleData | VariableRewardRuleData
@@ -62,6 +99,15 @@ export interface TraceEntry {
   assumptions: string[]
   pointsBeforeCap: number | null
   pointsAfterCap: number | null
+  /** Present only when the rule has a periodicCap. */
+  periodicCapTrace?: {
+    periodKey: string
+    maxPoints: number
+    priorUsage: number
+    remainingBefore: number
+    pointsAfterPeriodicCap: number
+    trusted: boolean
+  }
 }
 
 export interface CalculationTrace {

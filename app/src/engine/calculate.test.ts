@@ -653,3 +653,229 @@ describe('determinism', () => {
     expect(calculate(ctx, rules)).toEqual(calculate(ctx, rules))
   })
 })
+
+// --- periodic cap integration ---
+
+function makeCappedRule(
+  id: string,
+  periodicCap: { period: 'monthly' | 'quarterly' | 'annual'; maxPoints: number },
+  overrides: {
+    categories?: string[]; exclusions?: string[]; pointsPerDollar?: number;
+    capPoints?: number | null; effectiveFrom?: string; effectiveTo?: string | null; cardId?: string
+  } = {}
+): RuleVersion {
+  return {
+    id,
+    cardId: overrides.cardId ?? 'card-1',
+    effectiveFrom: overrides.effectiveFrom ?? '2024-01-01',
+    effectiveTo: overrides.effectiveTo !== undefined ? overrides.effectiveTo : null,
+    ruleData: {
+      ruleType: 'direct',
+      categories: overrides.categories ?? [],
+      exclusions: overrides.exclusions ?? [],
+      pointsPerDollar: overrides.pointsPerDollar ?? 3,
+      capPoints: overrides.capPoints !== undefined ? overrides.capPoints : null,
+      periodicCap: { ...periodicCap, resetBasis: 'calendar' as const, timezone: 'Asia/Kolkata' },
+    },
+  }
+}
+
+describe('periodic cap — engine integration', () => {
+  const monthlyCap = { period: 'monthly' as const, maxPoints: 1000 }
+
+  it('partial usage: earns only remaining capacity', () => {
+    // 900 used, earning 300 → capped to 100
+    const outcome = calculate(
+      makeContext({
+        amount: 10000, merchantCategory: 'dining', transactionDate: '2024-06-20',
+        periodicUsage: { r1: { periodKey: '2024-06', pointsUsed: 900, trusted: true } },
+      }),
+      [makeCappedRule('r1', monthlyCap, { categories: ['dining'] })]
+    )
+    expect(outcome.resolved).toBe(true)
+    expect(outcome.rewardsEarned).toBe(100)
+  })
+
+  it('zero prior usage: earns full points', () => {
+    const outcome = calculate(
+      makeContext({
+        amount: 10000, merchantCategory: 'dining', transactionDate: '2024-06-01',
+        periodicUsage: { r1: { periodKey: '2024-06', pointsUsed: 0, trusted: true } },
+      }),
+      [makeCappedRule('r1', monthlyCap, { categories: ['dining'] })]
+    )
+    expect(outcome.resolved).toBe(true)
+    expect(outcome.rewardsEarned).toBe(300) // 10000 cents / 100 * 3
+  })
+
+  it('exactly at cap: earns zero', () => {
+    const outcome = calculate(
+      makeContext({
+        amount: 10000, merchantCategory: 'dining', transactionDate: '2024-06-30',
+        periodicUsage: { r1: { periodKey: '2024-06', pointsUsed: 1000, trusted: true } },
+      }),
+      [makeCappedRule('r1', monthlyCap, { categories: ['dining'] })]
+    )
+    expect(outcome.resolved).toBe(true)
+    expect(outcome.rewardsEarned).toBe(0)
+  })
+
+  it('beyond cap (stale data): earns zero', () => {
+    const outcome = calculate(
+      makeContext({
+        amount: 10000, merchantCategory: 'dining', transactionDate: '2024-06-30',
+        periodicUsage: { r1: { periodKey: '2024-06', pointsUsed: 1500, trusted: true } },
+      }),
+      [makeCappedRule('r1', monthlyCap, { categories: ['dining'] })]
+    )
+    expect(outcome.resolved).toBe(true)
+    expect(outcome.rewardsEarned).toBe(0)
+  })
+
+  it('missing periodicUsage → UnresolvedOutcome', () => {
+    const outcome = calculate(
+      makeContext({ amount: 10000, merchantCategory: 'dining', transactionDate: '2024-06-15' }),
+      [makeCappedRule('r1', monthlyCap, { categories: ['dining'] })]
+    )
+    expect(outcome.resolved).toBe(false)
+    if (!outcome.resolved) {
+      expect(outcome.reason).toContain('missing')
+      expect(outcome.ruleApplied).toBe('r1')
+    }
+  })
+
+  it('untrusted periodicUsage → UnresolvedOutcome', () => {
+    const outcome = calculate(
+      makeContext({
+        amount: 10000, merchantCategory: 'dining', transactionDate: '2024-06-15',
+        periodicUsage: { r1: { periodKey: '2024-06', pointsUsed: 200, trusted: false } },
+      }),
+      [makeCappedRule('r1', monthlyCap, { categories: ['dining'] })]
+    )
+    expect(outcome.resolved).toBe(false)
+    if (!outcome.resolved) {
+      expect(outcome.reason).toContain('untrusted')
+    }
+  })
+
+  it('reset boundary: new month resets cap', () => {
+    // June usage is 950, but transaction is in July → usage must be for July
+    const outcome = calculate(
+      makeContext({
+        amount: 10000, merchantCategory: 'dining', transactionDate: '2024-07-01',
+        periodicUsage: { r1: { periodKey: '2024-07', pointsUsed: 0, trusted: true } },
+      }),
+      [makeCappedRule('r1', monthlyCap, { categories: ['dining'] })]
+    )
+    expect(outcome.resolved).toBe(true)
+    expect(outcome.rewardsEarned).toBe(300)
+  })
+
+  it('stale period key (old month) → missing-usage → UnresolvedOutcome', () => {
+    // Usage entry is for June, transaction is July
+    const outcome = calculate(
+      makeContext({
+        amount: 10000, merchantCategory: 'dining', transactionDate: '2024-07-15',
+        periodicUsage: { r1: { periodKey: '2024-06', pointsUsed: 500, trusted: true } },
+      }),
+      [makeCappedRule('r1', monthlyCap, { categories: ['dining'] })]
+    )
+    expect(outcome.resolved).toBe(false)
+    if (!outcome.resolved) {
+      expect(outcome.reason).toContain('missing')
+    }
+  })
+
+  it('per-transaction cap and periodic cap both apply (txn cap tighter)', () => {
+    // 3x on $200 = 600 raw, txn cap=100 → 100, periodic remaining=500 → 100
+    const outcome = calculate(
+      makeContext({
+        amount: 20000, merchantCategory: 'dining', transactionDate: '2024-06-15',
+        periodicUsage: { r1: { periodKey: '2024-06', pointsUsed: 500, trusted: true } },
+      }),
+      [makeCappedRule('r1', monthlyCap, { categories: ['dining'], capPoints: 100 })]
+    )
+    expect(outcome.resolved).toBe(true)
+    expect(outcome.rewardsEarned).toBe(100)
+  })
+
+  it('per-transaction cap and periodic cap both apply (periodic cap tighter)', () => {
+    // 3x on $200 = 600 raw, txn cap=500 → 500, periodic remaining=200 → 200
+    const outcome = calculate(
+      makeContext({
+        amount: 20000, merchantCategory: 'dining', transactionDate: '2024-06-15',
+        periodicUsage: { r1: { periodKey: '2024-06', pointsUsed: 800, trusted: true } },
+      }),
+      [makeCappedRule('r1', monthlyCap, { categories: ['dining'], capPoints: 500 })]
+    )
+    expect(outcome.resolved).toBe(true)
+    expect(outcome.rewardsEarned).toBe(200)
+  })
+
+  it('trace records periodicCapTrace on applied entry', () => {
+    const outcome = calculate(
+      makeContext({
+        amount: 10000, merchantCategory: 'dining', transactionDate: '2024-06-15',
+        periodicUsage: { r1: { periodKey: '2024-06', pointsUsed: 900, trusted: true } },
+      }),
+      [makeCappedRule('r1', monthlyCap, { categories: ['dining'] })]
+    )
+    const entry = outcome.trace.entries.find(e => e.applied)
+    expect(entry?.periodicCapTrace).toBeDefined()
+    expect(entry!.periodicCapTrace!.periodKey).toBe('2024-06')
+    expect(entry!.periodicCapTrace!.maxPoints).toBe(1000)
+    expect(entry!.periodicCapTrace!.priorUsage).toBe(900)
+    expect(entry!.periodicCapTrace!.remainingBefore).toBe(100)
+    expect(entry!.periodicCapTrace!.pointsAfterPeriodicCap).toBe(100)
+    expect(entry!.periodicCapTrace!.trusted).toBe(true)
+  })
+
+  it('rule without periodicCap is unchanged (no periodicCapTrace)', () => {
+    const outcome = calculate(
+      makeContext({ amount: 10000, merchantCategory: 'dining' }),
+      [makeRule('r1', { categories: ['dining'], pointsPerDollar: 3 })]
+    )
+    expect(outcome.resolved).toBe(true)
+    expect(outcome.rewardsEarned).toBe(300)
+    const entry = outcome.trace.entries.find(e => e.applied)
+    expect(entry?.periodicCapTrace).toBeUndefined()
+  })
+
+  it('quarterly cap works across quarter boundary', () => {
+    const qtrlyCap = { period: 'quarterly' as const, maxPoints: 2000 }
+    const outcome = calculate(
+      makeContext({
+        amount: 50000, merchantCategory: 'dining', transactionDate: '2024-04-01',
+        periodicUsage: { r1: { periodKey: '2024-Q2', pointsUsed: 0, trusted: true } },
+      }),
+      [makeCappedRule('r1', qtrlyCap, { categories: ['dining'] })]
+    )
+    expect(outcome.resolved).toBe(true)
+    expect(outcome.rewardsEarned).toBe(1500) // 50000/100*3 = 1500, under 2000 cap
+  })
+
+  it('annual cap', () => {
+    const annualCap = { period: 'annual' as const, maxPoints: 5000 }
+    const outcome = calculate(
+      makeContext({
+        amount: 100000, merchantCategory: 'dining', transactionDate: '2024-11-15',
+        periodicUsage: { r1: { periodKey: '2024', pointsUsed: 4800, trusted: true } },
+      }),
+      [makeCappedRule('r1', annualCap, { categories: ['dining'] })]
+    )
+    expect(outcome.resolved).toBe(true)
+    expect(outcome.rewardsEarned).toBe(200) // 3000 earned, capped to 200 remaining
+  })
+
+  it('periodic cap assumption recorded in trace', () => {
+    const outcome = calculate(
+      makeContext({
+        amount: 10000, merchantCategory: 'dining', transactionDate: '2024-06-15',
+        periodicUsage: { r1: { periodKey: '2024-06', pointsUsed: 900, trusted: true } },
+      }),
+      [makeCappedRule('r1', monthlyCap, { categories: ['dining'] })]
+    )
+    const entry = outcome.trace.entries.find(e => e.applied)
+    expect(entry?.assumptions.some(a => a.includes('periodic') && a.includes('monthly'))).toBe(true)
+  })
+})
