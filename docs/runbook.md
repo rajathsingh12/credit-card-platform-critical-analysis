@@ -4,7 +4,9 @@ How to bring the platform up on Colima + Docker and prove, step by step, what ha
 
 Every stage has **Run** (what you type) and **Check** (what proves it worked). If a Check fails, stop and fix it before moving on — later stages assume earlier ones passed.
 
-> **Two jobs, two sections.** Sections **0–16** below prove the platform **locally** — the full path, run by hand, with a verification query at each step. Section **A** is the different job: getting it **hosted on Vercel** and safe to invite someone to. If you are working the `.scratch/vercel-mvp/` effort, **start at [§A](#a-building-the-invite-only-vercel-mvp)** — read `.scratch/vercel-mvp/progress.md` before anything else.
+> **Two jobs, two sections.** Sections **0–16** below prove the platform **locally** — the full path, run by hand, with a verification query at each step. Section **A** is the different job: getting it **hosted on Vercel** and safe to invite someone to.
+>
+> **Working the `.scratch/vercel-mvp/` effort? Start at [§A.16](#a16-session-by-session--the-exact-sequence)** — it lists the five remaining sessions in order, each with the exact prompt to paste. Read `.scratch/vercel-mvp/progress.md` before anything else.
 
 ---
 
@@ -53,9 +55,9 @@ npm run lint
 
 | Command | Expect |
 |---|---|
-| `npm test` | `Test Files  21 passed (21)` and `Tests  278 passed (278)` |
+| `npm test` | `Test Files  27 passed (27)` and `Tests  370 passed (370)` |
 | `npm run typecheck` | no output after the `> tsc --noEmit` line |
-| `npm run lint` | `ESLint: No issues found` |
+| `npm run lint` | no output, exit 0 — ESLint prints nothing when clean |
 
 If all three pass, the calculation engine, publication gate, retraction logic, catalog export, change feed, evidence rules, and API validators are all green **without a database**. Database-backed truth is proven later in Stage 3.
 
@@ -898,9 +900,9 @@ Run this after a complete pass. Everything should be green.
 
 | # | Check | Command | Pass condition |
 |---|---|---|---|
-| 1 | Unit tests | `npm test` | 21 files, 278 tests passed |
+| 1 | Unit tests | `npm test` | 27 files, 370 tests passed |
 | 2 | Types | `npm run typecheck` | no output |
-| 3 | Lint | `npm run lint` | `No issues found` |
+| 3 | Lint | `npm run lint` | no output, exit 0 |
 | 4 | Docker daemon | `docker ps` | no connection error |
 | 5 | Postgres ready | `docker compose exec postgres pg_isready -U postgres -d ccplatform` | accepting connections |
 | 6 | Migrations | `npm run migrate` | 7 applied or skipped, `Migrations complete.` |
@@ -1588,3 +1590,166 @@ ls .scratch/mvp/map.md .scratch/demo/map.md .scratch/vercel-mvp/map.md
 | A revoked code still returns 200 | gating checks cookie *presence*, not validity | validate against the database on the API path too (A.10.2) |
 | Migration appears to succeed but tables are missing | ran against localhost, not the hosted URL | re-export `DATABASE_URL` and re-run; confirm with `psql "$DATABASE_URL" -c '\dt'` |
 | Next.js picks port 3001 locally | 3000 in use | substitute the real port in every curl |
+
+---
+
+## A.16 Session-by-session — the exact sequence
+
+Five sessions remain. **One ticket per session. `/clear` between each.**
+
+Each block below is one paste into a **fresh** session, as your first message. The prompt is identical every time except the ticket path — that is deliberate, so it stays mechanical and you never have to think about it.
+
+**Before each session:** the ticket's `Blocked by:` tickets must be `done`. Check the status table in `.scratch/vercel-mvp/progress.md`.
+
+**After each session:** confirm the agent updated `progress.md` and the ticket before you `/clear`. If it did not, ask it to — that is what makes the next session cheap.
+
+---
+
+### Session 1 — Ticket 06 (reconcile the tracker)
+
+**Unblocked. ~1 h. No product code.** Good first session: it clears the stale tracker entries before they mislead anything else.
+
+```
+/implement .scratch/vercel-mvp/issues/06-reconcile-the-tracker-with-reality.md
+
+Orient from .scratch/vercel-mvp/progress.md first — it has the status, the frontier, and the
+standing facts. Do not re-explore the repo to work out what is already done.
+
+The step-by-step for this ticket is docs/runbook.md section A.14 — follow it.
+
+Stay inside the ticket. Repo invariants: vitest stays DB-free (DB checks go in app/scripts/ with
+DATABASE_URL exported), rank by Reward Value never fee-amortized "effective cost", do not modify
+the Calculation Engine or its result type.
+
+Before claiming done: run npm run lint, npm run typecheck, npm test and npm run build from app/.
+Note: npm run lint can report a false FAIL through an output wrapper — run ./node_modules/.bin/eslint
+and read the exit code instead. Do not tick a box you did not run. Then update the ticket status and
+.scratch/vercel-mvp/progress.md (status table, frontier, and a session-log entry with the commit).
+```
+
+**Expect:** an ADR in `docs/adr/` recording Vercel + managed Postgres. Two of the four edits are already done (verified 2026-10-13) — the runbook says which.
+
+---
+
+### Session 2 — Ticket 02 (close the access-control holes)
+
+**Unblocked. ~1–2 h. Real code.** The security fix: the invite gate currently protects the UI but not the API.
+
+```
+/implement .scratch/vercel-mvp/issues/02-close-the-access-control-holes.md
+
+Orient from .scratch/vercel-mvp/progress.md first — it has the status, the frontier, and the
+standing facts. Do not re-explore the repo to work out what is already done.
+
+The step-by-step for this ticket is docs/runbook.md section A.10 — follow it. Prove the hole with
+the curl commands in A.10.1 BEFORE fixing it, so you have a before/after.
+
+Stay inside the ticket. Repo invariants: vitest stays DB-free (DB checks go in app/scripts/ with
+DATABASE_URL exported), rank by Reward Value never fee-amortized "effective cost", do not modify
+the Calculation Engine or its result type.
+
+Before claiming done: run npm run lint, npm run typecheck, npm test and npm run build from app/.
+Note: npm run lint can report a false FAIL through an output wrapper — run ./node_modules/.bin/eslint
+and read the exit code instead. Do not tick a box you did not run. Then update the ticket status and
+.scratch/vercel-mvp/progress.md (status table, frontier, and a session-log entry with the commit).
+```
+
+**Expect:** a middleware matcher covering the data endpoints, `/admin`, and the cookie; revocation evicting a live session. Needs the app running locally (runbook §2–§4).
+
+---
+
+### Session 3 — Ticket 03 (deploy to Vercel)
+
+**Unblocked. ~1–2 days. The long one, and you must be present** — `/wizard` handles the dashboard steps only a human can click.
+
+```
+/implement .scratch/vercel-mvp/issues/03-deploy-to-vercel-on-a-managed-postgres.md
+
+Orient from .scratch/vercel-mvp/progress.md first — it has the status, the frontier, and the
+standing facts. Do not re-explore the repo to work out what is already done.
+
+The step-by-step for this ticket is docs/runbook.md section A.11 — follow it. This ticket needs a
+human for provisioning and secrets: use /wizard for those steps.
+
+Stay inside the ticket. Repo invariants: vitest stays DB-free (DB checks go in app/scripts/ with
+DATABASE_URL exported), rank by Reward Value never fee-amortized "effective cost", do not modify
+the Calculation Engine or its result type.
+
+Before claiming done: run npm run lint, npm run typecheck, npm test and npm run build from app/.
+Note: npm run lint can report a false FAIL through an output wrapper — run ./node_modules/.bin/eslint
+and read the exit code instead. Do not tick a box you did not run. Then update the ticket status and
+.scratch/vercel-mvp/progress.md (status table, frontier, and a session-log entry with the commit).
+```
+
+**Expect:** a public HTTPS URL, `/api/health` reporting `db: connected`, 36 published cards on the hosted database. Budget for it — this ticket has the most failure modes and the least code.
+
+---
+
+### Session 4 — Ticket 04 (prove the invite-only flow end-to-end)
+
+**Blocked by 02 and 03 — do not start until both are `done`.** ~half a day. Mostly verification.
+
+```
+/implement .scratch/vercel-mvp/issues/04-prove-the-invite-flow-end-to-end.md
+
+Orient from .scratch/vercel-mvp/progress.md first — it has the status, the frontier, and the
+standing facts. Do not re-explore the repo to work out what is already done.
+
+The step-by-step for this ticket is docs/runbook.md section A.12 — follow it. Every check runs
+against the DEPLOYED HOST, never localhost. A green local run is not evidence about the host.
+
+Stay inside the ticket. Repo invariants: vitest stays DB-free (DB checks go in app/scripts/ with
+DATABASE_URL exported), rank by Reward Value never fee-amortized "effective cost", do not modify
+the Calculation Engine or its result type.
+
+Before claiming done: run npm run lint, npm run typecheck, npm test and npm run build from app/.
+Note: npm run lint can report a false FAIL through an output wrapper — run ./node_modules/.bin/eslint
+and read the exit code instead. Do not tick a box you did not run. Then update the ticket status and
+.scratch/vercel-mvp/progress.md (status table, frontier, and a session-log entry with the commit).
+```
+
+**Expect:** raw-HTTP evidence that anonymous access is refused, a redeemed code works, a calculation matches local, and revocation evicts a live session. **This is the acceptance test for the whole MVP.**
+
+---
+
+### Session 5 — Ticket 05 (minimum production safety)
+
+**Blocked by 03 — do not start until it is `done`.** ~1 day. Mixed: `/wizard` for the provider steps, `/implement` for the notice.
+
+```
+/implement .scratch/vercel-mvp/issues/05-minimum-production-safety.md
+
+Orient from .scratch/vercel-mvp/progress.md first — it has the status, the frontier, and the
+standing facts. Do not re-explore the repo to work out what is already done.
+
+The step-by-step for this ticket is docs/runbook.md section A.13 — follow it. The backup must be
+RESTORED into a scratch database, not just taken. Use /wizard for the provider-side steps.
+
+Stay inside the ticket. Repo invariants: vitest stays DB-free (DB checks go in app/scripts/ with
+DATABASE_URL exported), rank by Reward Value never fee-amortized "effective cost", do not modify
+the Calculation Engine or its result type.
+
+Before claiming done: run npm run lint, npm run typecheck, npm test and npm run build from app/.
+Note: npm run lint can report a false FAIL through an output wrapper — run ./node_modules/.bin/eslint
+and read the exit code instead. Do not tick a box you did not run. Then update the ticket status and
+.scratch/vercel-mvp/progress.md (status table, frontier, and a session-log entry with the commit).
+```
+
+**Expect:** a rehearsed restore with verified row counts, an uptime monitor on `/api/health`, the compliance notice on `/invite`, and a truthful verified-date.
+
+---
+
+### After Session 5
+
+The effort's definition of done is runbook **§A.6**. When every box there holds on the deployed host, the invite-only MVP is live and the effort is complete.
+
+### If something goes wrong
+
+- **Ticket turns out to be wrong-sized** → split it or add one, then update `progress.md` in the same session (§A.5).
+- **A bug resists a first look** → `/diagnosing-bugs`. It insists on a tight feedback loop before theorising.
+- **A step needs a human** (dashboard, secrets, DNS) → `/wizard`.
+- **Common failures** → §A.15.
+
+### Session 0 — already done
+
+Ticket 01 (green the build and CI) is **complete** — commit `cdcf5ae`, CI green on run [38468015819](https://github.com/rajathsingh12/credit-card-platform-critical-analysis/actions/runs/38468015819). Nothing to run. It is recorded here only so the sequence reads as six, not five.
