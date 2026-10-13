@@ -1,4 +1,4 @@
-import type { CapPeriod, PeriodicCapConfig, PeriodicUsageEntry } from './types'
+import type { PeriodicCapConfig, PeriodicUsageEntry } from './types'
 
 /**
  * Compute the period key for a transaction date under a given cap period.
