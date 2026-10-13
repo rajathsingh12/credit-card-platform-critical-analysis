@@ -1110,3 +1110,481 @@ Do not pull these in — they belong to other efforts or are ruled out:
 | Phase 5 Managed B2B Pilot, Phase 6 Portfolio Optimization | Beyond the MVP Boundary |
 | Issues 32, 33 (channel-aware rules, month-to-date caps) | `needs-info`, no trigger |
 | The full launch-compliance review | Deferred to before public launch; this effort carries only the notice |
+
+---
+
+## A.8 Gate reference — how to read a gate result
+
+Run every gate from `app/`. Two ways, and the second is the one you trust.
+
+**Convenience (as the workflow runs them):**
+
+```bash
+cd app
+npm run typecheck && npm run lint && npm test && npm run build
+```
+
+**Trustworthy — the binaries, with real exit codes.** The `npm run` wrapper in this environment mangles ESLint's output into `ESLint output (JSON parse failed: EOF while parsing a value at line 1 column 0)` and reports a **false FAIL**. It cost a verification pass on ticket 01. When a gate matters, run the binary:
+
+```bash
+cd app
+./node_modules/.bin/tsc --noEmit     ; echo "typecheck exit $?"
+./node_modules/.bin/vitest run       ; echo "test      exit $?"
+./node_modules/.bin/eslint           ; echo "lint      exit $?"
+./node_modules/.bin/next build       ; echo "build     exit $?"
+```
+
+All four must print `exit 0`. One-liner that fails loudly:
+
+```bash
+cd app
+./node_modules/.bin/tsc --noEmit && ./node_modules/.bin/eslint && \
+./node_modules/.bin/vitest run && ./node_modules/.bin/next build \
+&& echo "ALL FOUR GATES GREEN" || echo "GATE FAILED"
+```
+
+| Gate | Baseline to preserve |
+|---|---|
+| typecheck | exit 0 |
+| tests | **370 passed across 27 files.** A drop means something was weakened |
+| lint | exit 0, no output |
+| build | exit 0, emits a route table |
+
+**ESLint is pinned to `^9.39.5` on purpose.** `eslint-plugin-jsx-a11y` (6.10.2, its latest release) accepts only up to ESLint 9. Bumping ESLint to 10 re-breaks `npm ci` and CI with it.
+
+**Local stack, if a ticket needs a running app.** Sections 0–7 above are the full path: Colima VM, Postgres container on 5432, `export DATABASE_URL=...`, `npm run migrate`, `npm run seed`, `npm run seed -- --approve`, `npm run seed:invites`, then `npm run dev` on port 3000. Scripts do **not** read `.env` — export `DATABASE_URL` in the terminal that runs them.
+
+---
+
+## A.9 Ticket 01 — Green the build and CI  ·  DONE
+
+**Status: `done`.** Commit `cdcf5ae`. Verified 2026-10-13. Nothing to run.
+
+| Criterion | Evidence |
+|---|---|
+| lint exits 0 | `./node_modules/.bin/eslint` → exit 0 |
+| build exits 0 | `./node_modules/.bin/next build` → exit 0, route table emitted |
+| `npm ci` resolves without `--legacy-peer-deps` | Proved in a scratch dir: exit 0, zero `ERESOLVE` |
+| CI runs green | Run [38468015819](https://github.com/rajathsingh12/credit-card-platform-critical-analysis/actions/runs/38468015819) on `f842bdd` — all 7 steps executed, **370 tests passed in CI**, 104s. The previous 8 runs all died at *Install dependencies* in 29s |
+| 370 tests still pass | `Tests 370 passed (370)` |
+| Dead import removed, not suppressed | `app/src/engine/periodic-cap.ts` — import deleted |
+
+**What changed:** dropped the unused `CapPeriod` import; pinned `eslint` to `^9.39.5`; removed the dead `--legacy-peer-deps` from `app/Dockerfile`.
+
+**Side effect worth knowing for ticket 03:** the Edge-runtime `crypto` warning is gone — the build now emits no warnings at all.
+
+---
+
+## A.10 Ticket 02 — Close the access-control holes
+
+**Blocked by:** nothing (01 is done). **Roughly 1–2 h.** This is a code ticket — `/implement` drives it.
+
+### A.10.1 Prove the hole before fixing it
+
+Never fix a security bug you have not watched succeed. Start the app (§4.2, `npm run dev`), then from **Terminal D**:
+
+```bash
+# Data endpoints — expect 200 today. That IS the bug.
+curl -s -o /dev/null -w 'cards              %{http_code}\n' localhost:3000/api/cards
+curl -s -o /dev/null -w 'correction-history %{http_code}\n' localhost:3000/api/correction-history
+curl -s -o /dev/null -w 'calculate          %{http_code}\n' -X POST \
+  -H 'Content-Type: application/json' \
+  -d '{"cardId":"00000000-0000-0000-0000-000000000000","amountRupees":100,"merchantCategory":"dining","transactionDate":"2026-01-01"}' \
+  localhost:3000/api/calculate
+curl -s -o /dev/null -w 'reports            %{http_code}\n' -X POST \
+  -H 'Content-Type: application/json' \
+  -d '{"cardId":"00000000-0000-0000-0000-000000000000","description":"probe"}' \
+  localhost:3000/api/reports
+
+# Admin console shell — expect 200 today. The shell should not be public.
+curl -s -o /dev/null -w 'admin shell        %{http_code}\n' localhost:3000/admin
+
+# Health — must stay open. This one is correct at 200.
+curl -s -o /dev/null -w 'health             %{http_code}\n' localhost:3000/api/health
+```
+
+Write the numbers down. They are the before-column of the proof.
+
+### A.10.2 The fix
+
+The gate lives in `app/src/middleware.ts`. Its matcher is currently:
+
+```js
+export const config = { matcher: ['/', '/api/admin/:path*'] }
+```
+
+That covers the home page and the admin API — and nothing else. Read the ticket for the acceptance criteria; the shape of the fix is:
+
+- **Extend the matcher** to the data endpoints (`/api/calculate`, `/api/cards`, `/api/reports`, `/api/telemetry`, `/api/correction-history`) and the `/admin` page shell.
+- **Keep `/api/health` open** — an uptime monitor has no invite code.
+- **Validate, don't just check presence.** Today `middleware.ts` only asks whether the cookie exists, and `page.tsx` asks the database. A revoked code must not survive on a stale cookie, so the API path needs the same database check the page path already does.
+- **Set `secure: true`** on the cookie in `app/src/app/api/invite/redeem/route.ts` (currently `httpOnly`, `sameSite: 'strict'`, `path: '/'`, `maxAge` 30 days — no `secure`). It must not break plain-HTTP local dev.
+- **Rate limit** the write paths per session.
+
+`/api/calculate` and `/api/telemetry` already read the cookie — but only to tag telemetry, never to authorise. Do not mistake that for gating.
+
+### A.10.3 Prove the fix
+
+```bash
+# Every data endpoint — expect 401
+for p in cards correction-history; do
+  curl -s -o /dev/null -w "$p %{http_code}\n" "localhost:3000/api/$p"
+done
+curl -s -o /dev/null -w 'calculate %{http_code}\n' -X POST \
+  -H 'Content-Type: application/json' \
+  -d '{"cardId":"x","amountRupees":100,"merchantCategory":"dining","transactionDate":"2026-01-01"}' \
+  localhost:3000/api/calculate
+
+# Health — expect 200
+curl -s -o /dev/null -w 'health %{http_code}\n' localhost:3000/api/health
+
+# With a real session — expect 200. Redeem a code first (§5.2, §5.4).
+curl -s -b beta-cookies.txt -o /dev/null -w 'cards (with session) %{http_code}\n' \
+  localhost:3000/api/cards
+
+# Revocation must evict a live session. Revoke the code (§5.7), then:
+curl -s -b beta-cookies.txt -o /dev/null -w 'cards (revoked) %{http_code}\n' \
+  localhost:3000/api/cards
+```
+
+**Check** — the last one must be 401. If a revoked code still returns 200, the presence-check survived and the fix is incomplete.
+
+### A.10.4 Done means
+
+- Every data endpoint 401s without a session; health stays 200.
+- A revoked code evicts a live session, proved above.
+- The `/admin` shell is not served unauthenticated.
+- The cookie sets `secure` under HTTPS without breaking local HTTP.
+- Write paths are rate limited.
+- All four gates green (A.8). Existing tests updated to carry a session — **not** weakened.
+
+---
+
+## A.11 Ticket 03 — Deploy to Vercel on a managed Postgres
+
+**Blocked by:** nothing (01 is done). **Roughly 1–2 days.** The longest ticket, and **the one that needs you at the keyboard** — `/wizard` handles the parts only a human can click.
+
+### A.11.1 What makes this hard
+
+The app has only ever run locally. Three things have no local equivalent:
+
+1. **Migrations.** Locally, `scripts/docker-entrypoint.sh` runs migrate → seed → approve → seed-invites on container boot. Vercel has no entrypoint. Migrations must run against the hosted database by hand or from a build step.
+2. **Connection pooling.** `src/db/client.ts` opens a `pg.Pool` at module load. Serverless instances multiply — a naive pool exhausts the Postgres connection limit. Use the provider's pooled endpoint.
+3. **`DATABASE_URL` at import time.** `client.ts` throws if it is unset, which on serverless surfaces as a build or cold-start failure rather than a clean error.
+
+### A.11.2 Sequence
+
+**Step 1 — provision.** Use `/wizard`. It generates an interactive script that opens each URL, captures each value, and writes it into `.env` and GitHub secrets. You need:
+
+- A Vercel project pointed at this repo, with the **root directory set to `app/`**.
+- A managed Postgres with a **pooled** connection string.
+- Env vars: `DATABASE_URL` (pooled), `ADMIN_TOKEN`, `BETA_INVITE_CODES`.
+
+**Step 2 — run migrations against the hosted database.** From `app/`, with the hosted URL exported:
+
+```bash
+export DATABASE_URL='<hosted pooled connection string>'
+npm run migrate
+```
+
+**Check** — the runner prints each applied migration:
+
+```bash
+export DATABASE_URL='<hosted>'
+npm run migrate          # expect 7 lines: 0000_scaffold.sql … 0006_beta-telemetry.sql
+```
+
+**Step 3 — seed.** Same shell, in order:
+
+```bash
+npm run seed                    # prepares cards + Data Leads; publishes nothing
+npm run seed -- --approve       # walks the Publication Gate
+npm run seed:invites            # upserts the codes in BETA_INVITE_CODES
+```
+
+**Check** — expect `Published (36)` and `Withheld (4)`. The 4 are correct: `inferred` and `community-reported` evidence does not meet the publication standard (ADR 0003). If it publishes 40, the evidence domain check has regressed — stop.
+
+```bash
+npm run verify:seed             # golden-dataset check against the hosted rows
+```
+
+**Check** — no `✗` lines.
+
+**Step 4 — deploy.** Push; Vercel builds `app/`. Watch the build log.
+
+**Step 5 — verify the host.**
+
+```bash
+HOST='https://<your-app>.vercel.app'
+
+curl -s "$HOST/api/health" | jq
+# expect: { "status": "ok", "db": "connected" }
+```
+
+A `503` with `db: disconnected` means `DATABASE_URL` is wrong, unpooled, or the database is unreachable from Vercel.
+
+```bash
+curl -s -o /dev/null -w 'root %{http_code} -> %{redirect_url}\n' "$HOST/"
+# expect: 307 -> $HOST/invite
+```
+
+### A.11.3 The migration/seeding path must be repeatable
+
+Whatever you settle on — a documented manual run, or a protected admin endpoint — write it down in the ticket's resolution comment. A second environment must be standable-up without re-deriving it.
+
+### A.11.4 Done means
+
+- Public HTTPS URL; `/api/health` reports `db: connected`.
+- Hosted database has migrations applied and 36 published cards + invite codes.
+- Secrets set in the host, not committed; no secret in the client bundle.
+- Deployment config exists and builds the right directory.
+- Redeploy after a code change picks it up.
+- Migration/seeding path documented and repeatable.
+
+### A.11.5 Watch out for
+
+- **The Edge-runtime `crypto` import.** `app/src/beta/invite.ts` imports Node `crypto`, and middleware runs on Edge by default. The build warning is currently gone, but ticket 02 makes middleware do *more* — confirm it still works on the deployed host, not just locally.
+- **Cold-start pool exhaustion.** If you see intermittent connection errors under light load, the pool is the cause, not the database.
+
+---
+
+## A.12 Ticket 04 — Prove the invite-only flow end-to-end on the host
+
+**Blocked by:** 02, 03. **Roughly half a day.** Mostly verification. **This is the acceptance test for the whole MVP** — the one ticket that proves the product does what it claims.
+
+Every check below runs against `HOST`, never localhost. A green local run is **not** the same claim, and that distinction has already mattered once in this project.
+
+### A.12.1 No code, no session
+
+```bash
+HOST='https://<your-app>.vercel.app'
+
+# 1. Anonymous root redirects to the invite page
+curl -s -o /dev/null -w 'root   %{http_code} -> %{redirect_url}\n' "$HOST/"
+# expect: 307 -> $HOST/invite
+
+# 2. Data endpoints refuse an anonymous caller
+for p in cards correction-history; do
+  curl -s -o /dev/null -w "$p %{http_code}\n" "$HOST/api/$p"
+done
+# expect: 401 each
+
+# 3. Health stays open
+curl -s -o /dev/null -w 'health %{http_code}\n' "$HOST/api/health"
+# expect: 200
+```
+
+### A.12.2 Redeem a code on the host
+
+```bash
+# Issue a code (needs the admin token)
+curl -s -X POST -H "Authorization: Bearer $ADMIN_TOKEN" "$HOST/api/admin/invites" \
+  | jq -r '.code.code' > /tmp/invite.txt
+
+CODE=$(cat /tmp/invite.txt); echo "code: $CODE"
+
+# Redeem it, capturing the cookie
+curl -s -c beta-host-cookies.txt -X POST -H 'Content-Type: application/json' \
+  -d "{\"code\":\"$CODE\"}" "$HOST/api/invite/redeem" | jq
+# expect: { "ok": true }
+```
+
+**Check** — `beta-host-cookies.txt` contains a `beta_access` entry.
+
+```bash
+# The session now opens the data endpoints
+curl -s -b beta-host-cookies.txt "$HOST/api/cards" | jq '.cards | length'
+# expect: 36
+```
+
+### A.12.3 A calculation completes, and matches local
+
+```bash
+CARD=$(curl -s -b beta-host-cookies.txt "$HOST/api/cards" | jq -r '.cards[0].id')
+
+curl -s -b beta-host-cookies.txt -X POST -H 'Content-Type: application/json' \
+  -d "{\"cardId\":\"$CARD\",\"amountRupees\":2500,\"merchantName\":\"Test Restaurant\",\"merchantCategory\":\"dining\",\"transactionDate\":\"2026-10-14\"}" \
+  "$HOST/api/calculate" | tee /tmp/host-calc.json | jq '{resolved: .result.resolved, rewardValue: .result.grossReturnCents, rules: (.result.trace.entries | length)}'
+```
+
+**Check** — `resolved: true`, a non-null reward value, and a trace with entries. Then run the **identical** request against localhost (§6.2) and compare `grossReturnCents`. They must match. A mismatch means the hosted seed differs from local — re-check A.11 step 3.
+
+### A.12.4 A contextual report lands in the steward queue
+
+```bash
+curl -s -b beta-host-cookies.txt -X POST -H 'Content-Type: application/json' \
+  -d "{\"cardId\":\"$CARD\",\"description\":\"Host acceptance check\",\"sourceUrl\":\"https://example.com/terms\"}" \
+  "$HOST/api/reports" | tee /tmp/host-report.json | jq
+# expect: 201 with { reportId, dataLeadId, createdAt }
+
+REPORT=$(jq -r '.reportId' /tmp/host-report.json)
+
+# It created a Data Lead, which is what the steward queue lists
+curl -s -H "Authorization: Bearer $ADMIN_TOKEN" "$HOST/api/admin/leads" | jq '.leads | length'
+
+# And the report detail is readable by its id
+curl -s -H "Authorization: Bearer $ADMIN_TOKEN" "$HOST/api/admin/reports/$REPORT" | jq '.report.description'
+```
+
+**Note on the routes.** There is **no** `GET /api/admin/reports` list endpoint — the steward queue reads `/api/admin/leads` (pending Data Leads), and `/api/admin/reports/[id]` takes a report UUID. Submitting a report creates both a `contextual_reports` row and a `data_leads` row, so the lead is what appears in the queue.
+
+### A.12.5 Revocation evicts a live session
+
+```bash
+# Revoke the code that is currently in use
+curl -s -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
+  "$HOST/api/admin/invites/$CODE/revoke" | jq
+# expect: { "ok": true }   (404 if the code was already revoked)
+
+# The live session must now be refused — this is the whole access model
+curl -s -b beta-host-cookies.txt -o /dev/null -w 'cards (revoked) %{http_code}\n' \
+  "$HOST/api/cards"
+# expect: 401
+
+curl -s -b beta-host-cookies.txt -o /dev/null -w 'root (revoked) %{http_code} -> %{redirect_url}\n' \
+  "$HOST/"
+# expect: 307 -> $HOST/invite?revoked=1
+```
+
+**Check** — if the revoked session still returns 200, ticket 02's fix is presence-only. Go back.
+
+### A.12.6 Direct API calls, not the UI
+
+Every check above is a raw HTTP call. That is deliberate — a check that goes through the browser can pass on the redirect while the endpoint stays open. Keep them raw.
+
+### A.12.7 Browser pass
+
+Open `$HOST` in a browser. Confirm the invite page renders at desktop and mobile widths, and that redeeming a fresh code lands you on the calculator. This is the only step that wants a browser.
+
+### A.12.8 Done means
+
+- Anonymous access refused on every data endpoint; health open.
+- Redeem → session → calculate → report all work on the host.
+- The hosted calculation matches the local one.
+- Revocation evicts a live session.
+- Desktop and mobile render correctly.
+- **The result is written down:** the URL, the date, what was exercised, what did not behave as expected.
+
+---
+
+## A.13 Ticket 05 — Minimum production safety
+
+**Blocked by:** 03. **Roughly 1 day.** Mixed: `/wizard` for the provider steps, `/implement` for the notice.
+
+### A.13.1 Backup, and a rehearsal
+
+A backup that has never been restored is not a backup.
+
+```bash
+# Take one (adjust to your provider's dump tooling)
+export DATABASE_URL='<hosted>'
+pg_dump "$DATABASE_URL" --no-owner --no-acl -f /tmp/ccplatform-$(date +%F).sql
+ls -lh /tmp/ccplatform-*.sql      # expect a non-trivial size
+```
+
+Then **restore it into a scratch database** and prove the data is there:
+
+```bash
+export SCRATCH_URL='<a throwaway database, NOT production>'
+psql "$SCRATCH_URL" -f /tmp/ccplatform-$(date +%F).sql
+psql "$SCRATCH_URL" -c 'SELECT count(*) FROM cards;'                 # expect 40
+psql "$SCRATCH_URL" -c "SELECT count(*) FROM rule_versions WHERE retracted_at IS NULL;"
+psql "$SCRATCH_URL" -c 'SELECT count(*) FROM invite_codes;'
+```
+
+**Check** — the counts match production. Record the restore duration; that is your recovery time.
+
+### A.13.2 Recurring backup and an uptime monitor
+
+- Schedule the dump on a stated cadence, with a stated retention window and destination.
+- Point an external monitor at `$HOST/api/health`; it must alert on failure. A health probe nobody watches does not count.
+
+```bash
+# What the monitor will poll — expect 200 and db: connected
+curl -s "$HOST/api/health" | jq
+```
+
+### A.13.3 The invite notice, and a truthful verified-date
+
+Two content changes:
+
+**The notice.** Issue 40 decided a plain-language notice goes **verbatim** on `/invite` and in the invite email: what is recorded, what is not, the cookie, the retention sentence, "not financial advice / not an issuer complaint channel", and the stop promise (revoke + delete `beta_events` within 7 days, reports stay unattributed). It cites no legislation. It is **not on the page today** — `app/src/app/invite/page.tsx` carries only a short beta-access blurb.
+
+**The verified date.** `SEED_VERIFIED_AT` in `app/src/catalog/verified-card-set.ts` is hard-coded to `2025-01-01` and rendered verbatim in the UI (`home-client.tsx`, `verified {formatDate(meta.sourceDate)}`). The app therefore claims facts were verified in January 2025. Either refresh it to the date the set was actually re-checked, or state the real date. **Do not tick this by changing only the constant** — confirm the seed script writes the new date through to the rows.
+
+**Scope warning:** the retention and deletion promises must match what the system actually does. If the notice promises deletion within a window, the mechanism to honour it must exist — or soften the promise to what is true.
+
+### A.13.4 A written restore procedure
+
+One page: how to bring service back after a failure. Walk it once. It is the difference between a rehearsal and a plan.
+
+### A.13.5 Done means
+
+- Backup taken **and** restore rehearsed, with counts verified and duration recorded.
+- Recurring backup scheduled with a stated retention and destination.
+- Uptime monitor live on `/api/health`, alerting on failure.
+- The notice verbatim on `/invite` and in the invite email.
+- The verified-date shown to users is truthful, and the seed writes it through.
+- A written restore procedure, walked once.
+
+---
+
+## A.14 Ticket 06 — Reconcile the tracker with reality
+
+**Blocked by:** nothing. **Roughly 1 h.** No product code. Good first session — it clears the traps before they mislead another one.
+
+Four edits, each with a `Check`.
+
+**1. The two phantom tickets.** `03-payment-strategy-composition-layer.md` and `04-payment-strategy-trace-header.md` were built in `f148c5a` but left `ready-for-agent`. **Already corrected on 2026-10-13** — verify rather than redo:
+
+```bash
+grep -m1 'Status:' .scratch/payment-strategy/issues/03-*.md .scratch/payment-strategy/issues/04-*.md
+# expect: done for both
+```
+
+**2. The Phase-6 gate override.** Five commits built Phase-6 tickets against the runbook's explicit *"do not `/implement` until issue 43 records a pass."* The override existed only outside the repo. **Already recorded in `.scratch/payment-strategy/map.md`** on 2026-10-13 — verify:
+
+```bash
+grep -n "Gate override" .scratch/payment-strategy/map.md
+# expect a hit
+```
+
+**3. The hosting ADR.** Vercel + managed Postgres supersedes Issue 39's single-VPS decision. This one is **not yet written**. Raise it as an ADR in `docs/adr/` (next free number is `0007`), stating what the earlier decision assumed and why the change is warranted. Follow the existing ADRs' shape — frontmatter `status: accepted`, then the decision and its consequences.
+
+**Check:**
+
+```bash
+ls docs/adr/ | tail -3
+grep -l "Vercel" docs/adr/*.md
+```
+
+**4. Nothing is deleted.** The paused Closed Beta and demo maps keep their history intact so either can be resumed.
+
+```bash
+ls .scratch/mvp/map.md .scratch/demo/map.md .scratch/vercel-mvp/map.md
+# expect all three present
+```
+
+### A.14.1 Done means
+
+- The two phantom tickets read `done`, with their delivering commit recorded.
+- The Phase-6 gate override is written in the payment-strategy map.
+- An ADR records Vercel + managed Postgres, superseding the VPS decision.
+- The record follows the repo's own rule: a gate redraw or plan change is recorded as an ADR or a plan amendment, never silently.
+- All three maps still exist.
+
+---
+
+## A.15 Troubleshooting this effort
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `npm run lint` prints `ESLint output (JSON parse failed…)` | output wrapper mangles ESLint | run `./node_modules/.bin/eslint` and read the exit code (A.8) |
+| `npm ci` fails with `ERESOLVE` | ESLint was bumped to 10 | pin back to `^9.39.5`; `eslint-plugin-jsx-a11y` has no v10-compatible release |
+| `DATABASE_URL is not set` from a script | scripts do not read `.env` | `export DATABASE_URL=...` in that terminal |
+| Hosted `/api/health` returns `503 db: disconnected` | wrong, unpooled, or unreachable connection string | use the provider's **pooled** endpoint; check Vercel env vars |
+| Intermittent connection errors on the host under light load | a `pg.Pool` per serverless instance | use the pooled endpoint, or a pooler |
+| `seed --approve` publishes 40, not 36 | evidence domain check regressed | re-run `npm test`; inspect `app/src/catalog/evidence.ts` |
+| A revoked code still returns 200 | gating checks cookie *presence*, not validity | validate against the database on the API path too (A.10.2) |
+| Migration appears to succeed but tables are missing | ran against localhost, not the hosted URL | re-export `DATABASE_URL` and re-run; confirm with `psql "$DATABASE_URL" -c '\dt'` |
+| Next.js picks port 3001 locally | 3000 in use | substitute the real port in every curl |
