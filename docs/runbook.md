@@ -1024,6 +1024,16 @@ One ticket per session. `/clear` between tickets.
 
 Step 3 and 4 are not bookkeeping. Skip them and the next session starts by re-deriving what you already knew — which is exactly what this file exists to prevent.
 
+**Reading a gate result.** `npm run lint` can print `ESLint output (JSON parse failed: ...)` and report a false failure — a wrapper in this environment mangles ESLint's output. Do not trust a wrapped gate result. Run the binary directly and read its exit code:
+
+```bash
+cd app
+./node_modules/.bin/tsc --noEmit    # typecheck
+./node_modules/.bin/vitest run      # tests
+./node_modules/.bin/eslint          # lint
+./node_modules/.bin/next build      # build
+```
+
 ### A.2 The per-ticket prompt
 
 `/clear` first. Then paste, substituting the ticket path:
