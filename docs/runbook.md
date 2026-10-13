@@ -4,6 +4,8 @@ How to bring the platform up on Colima + Docker and prove, step by step, what ha
 
 Every stage has **Run** (what you type) and **Check** (what proves it worked). If a Check fails, stop and fix it before moving on — later stages assume earlier ones passed.
 
+> **Two jobs, two sections.** Sections **0–16** below prove the platform **locally** — the full path, run by hand, with a verification query at each step. Section **A** is the different job: getting it **hosted on Vercel** and safe to invite someone to. If you are working the `.scratch/vercel-mvp/` effort, **start at [§A](#a-building-the-invite-only-vercel-mvp)** — read `.scratch/vercel-mvp/progress.md` before anything else.
+
 ---
 
 ## 0. Prerequisites
@@ -981,3 +983,120 @@ Do not treat these as failures during verification:
 | Phase 0 human gate items (compliance review, named Data Steward, beta cohort) | Awaiting a human decision | issue 01, `ready-for-human` |
 | Portfolio Optimization, consumer billing, affiliate flows, bank linking, self-serve public API, historical "as of" calculations | Explicit MVP non-goals | `docs/mvp-implementation-plan.md` |
 | The 4 withheld cards | Correctly blocked by the evidence standard | `npm run seed -- --approve` output |
+
+---
+
+## A. Building the invite-only Vercel MVP
+
+Sections 0–16 above bring the platform up **locally** and prove what is built. This section is the different job: getting it **hosted and safe to invite someone to**. It is the runbook for the `.scratch/vercel-mvp/` effort.
+
+**Destination:** the platform on a public Vercel URL, invite code as the real access boundary, with backups and an uptime probe. Not the Closed Beta — that is a separate, paused effort.
+
+### A.0 The handoff file — read this before anything else
+
+Every session starts by reading **`.scratch/vercel-mvp/progress.md`**. It holds what is done, what is next, and what the last session learned. It plus your ticket is the entire orientation.
+
+**Do not re-explore the repo to work out where things stand.** That is what the progress file is for. If something is missing from it, add it — that is the fix, not a fresh exploration next time.
+
+| File | What it is |
+|---|---|
+| `.scratch/vercel-mvp/progress.md` | **The handoff.** Status table, frontier, standing facts, session log |
+| `.scratch/vercel-mvp/map.md` | Destination, decisions, scope boundaries |
+| `.scratch/vercel-mvp/issues/NN-*.md` | The ticket you are working |
+| `docs/output/project-status-and-quality-report.md` | Where these tickets came from; the verified state of the repo |
+
+> `.scratch/` is gitignored, so the progress file is local-only. That is fine — it is a working document for the agent on this machine, not a deliverable.
+
+### A.1 How a session runs
+
+One ticket per session. `/clear` between tickets.
+
+**Start.** Read `.scratch/vercel-mvp/progress.md`, then your ticket. Set the ticket's `Status:` to `claimed` before doing any work.
+
+**Work.** Run the `/implement` prompt below, substituting the ticket path.
+
+**End — this is the part that makes the next session cheap.** Do all four:
+
+1. Run all four gates from `app/`: `npm run lint && npm run typecheck && npm test && npm run build`.
+2. Set the ticket's `Status:` to `done` and tick its criteria — only the ones you actually ran.
+3. Update the status table and the frontier in `.scratch/vercel-mvp/progress.md`.
+4. Append one session-log entry: what changed, the commit hash, and anything the next session would otherwise have to rediscover.
+
+Step 3 and 4 are not bookkeeping. Skip them and the next session starts by re-deriving what you already knew — which is exactly what this file exists to prevent.
+
+### A.2 The per-ticket prompt
+
+`/clear` first. Then paste, substituting the ticket path:
+
+```
+/implement .scratch/vercel-mvp/issues/<NN-slug>.md
+
+Orient from .scratch/vercel-mvp/progress.md first — it has the status, the frontier, and the
+standing facts. Do not re-explore the repo to work out what is already done.
+
+Stay inside the ticket. Repo invariants: vitest stays DB-free (DB checks go in app/scripts/ with
+DATABASE_URL exported), rank by Reward Value never fee-amortized "effective cost", do not modify
+the Calculation Engine or its result type.
+
+Before claiming done: run npm run lint, npm run typecheck, npm test and npm run build from app/.
+Do not tick a box you did not run. Then update the ticket status and .scratch/vercel-mvp/progress.md
+(status table, frontier, and a session-log entry with the commit).
+```
+
+`/implement` drives `/tdd` and `/code-review` internally and commits.
+
+### A.3 Which session for which ticket
+
+| Ticket | Session | Depends on | Roughly |
+|---|---|---|---|
+| 01 Green the build and CI | own session | — | 30 min |
+| 06 Reconcile the tracker with reality | own session | — | 1 h |
+| 02 Close the access-control holes | own session | 01 | 1–2 h |
+| 03 Deploy to Vercel on a managed Postgres | own session | 01 | 1–2 days |
+| 04 Prove the invite-only flow end-to-end | own session | 02, 03 | half a day |
+| 05 Minimum production safety | own session | 03 | 1 day |
+
+**01 and 06 can run now, in either order.** They are independent. Do 01 first if you want the build green immediately — it is a dead import plus a dependency-version fix.
+
+**03 is the long one.** It has the most failure modes (pooling, migrations on a serverless host, secrets) and the least code. Budget for it, and expect to use `/wizard` for the parts only a human can do.
+
+### A.4 Skills this effort uses
+
+| Skill | When |
+|---|---|
+| `/implement <ticket>` | Every ticket. Drives `/tdd` and `/code-review`, then commits |
+| `/wizard` | Steps only a human can take — provisioning the host, setting secrets, clicking through a provider dashboard. Ticket 03 is the main one |
+| `/diagnosing-bugs` | Something resists a first look. It insists on a tight feedback loop before theorising |
+| `/grilling` + `/domain-modeling` | Only if a ticket turns out to rest on an undecided question |
+
+Not `/triage` — these tickets are already agent-ready. Not `/wayfinder` — the map is charted; this is execution.
+
+### A.5 When a ticket is wrong
+
+If a ticket turns out to be mis-scoped, split it or add a new one, then update `progress.md` in the same session. The tracker is the plan — leaving it stale is how the last effort ended up with three tickets marked `ready-for-agent` that were already built, and a later session would have rebuilt them.
+
+### A.6 Definition of done for the whole effort
+
+The effort is complete when all of these hold on the **deployed host**, not locally:
+
+- [ ] An invite code is the real access boundary — an unauthenticated request to a data endpoint returns 401.
+- [ ] Redeeming a code grants access; revoking it evicts a live session.
+- [ ] A calculation completes with its Calculation Trace and Evidence Status, matching local output.
+- [ ] A contextual report submitted from the host lands in the steward queue.
+- [ ] A backup has been taken **and a restore rehearsed**.
+- [ ] An uptime monitor watches the health probe.
+- [ ] The invite page carries the plain-language notice, and the verified-date shown is truthful.
+
+Ticket 04 is the acceptance test; the rest is what makes it safe to leave running.
+
+### A.7 What this effort is not
+
+Do not pull these in — they belong to other efforts or are ruled out:
+
+| Excluded | Why |
+|---|---|
+| Running the Closed Beta (30-day window, Phase-4 gate verdict, cohort) | Separate paused effort; `.scratch/mvp/` |
+| Payment Strategy ticket 07 (catalog/change-feed for routes) | Phase-5-facing and dormant |
+| Phase 5 Managed B2B Pilot, Phase 6 Portfolio Optimization | Beyond the MVP Boundary |
+| Issues 32, 33 (channel-aware rules, month-to-date caps) | `needs-info`, no trigger |
+| The full launch-compliance review | Deferred to before public launch; this effort carries only the notice |
