@@ -11,6 +11,7 @@
     "test:watch": "vitest",
     "migrate": "tsx scripts/migrate.ts",
     "seed": "tsx scripts/seed-verified-cards.ts",
+    "setup:db": "npm run migrate && npm run seed && npm run seed -- --approve && npm run seed:invites",
     "verify:seed": "tsx scripts/verify-seed.ts",
     "seed:strategies": "tsx scripts/seed-strategies.ts",
     "verify:strategies": "tsx scripts/verify-strategies.ts",

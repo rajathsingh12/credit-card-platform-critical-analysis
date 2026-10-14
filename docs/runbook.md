@@ -1282,6 +1282,26 @@ The app has only ever run locally. Three things have no local equivalent:
 - A managed Postgres with a **pooled** connection string.
 - Env vars: `DATABASE_URL` (pooled), `ADMIN_TOKEN`, `BETA_INVITE_CODES`.
 
+The wizard is committed at `app/scripts/setup-vercel.sh` — five stages, run it with
+`bash app/scripts/setup-vercel.sh`. It generates the admin token and five invite codes rather than
+asking you to invent them, and writes all three values to `app/.env`. The Neon provider is the one
+it walks; ADR 0007 left the provider open, and the pooled-string check in stage 2 is the part that
+matters for any provider.
+
+```bash
+cd app && bash scripts/setup-vercel.sh
+```
+
+**Check** — `app/.env` holds `DATABASE_URL` containing `-pooler`, a 64-character `ADMIN_TOKEN`, and
+five 24-character hex codes in `BETA_INVITE_CODES`.
+
+Two things the wizard cannot do for you:
+
+- **Root Directory = `app/`.** This is a project setting in the Vercel dashboard, not a
+  `vercel.json` key. Miss it and the build looks for a `package.json` at the repo root and fails.
+- **Set the env vars for all environments.** `DATABASE_URL` is needed at *build* time as well as
+  runtime — `next build` imports every route module (see A.11.5).
+
 **Step 2 — run migrations against the hosted database.** From `app/`, with the hosted URL exported:
 
 ```bash
@@ -1303,6 +1323,18 @@ npm run seed                    # prepares cards + Data Leads; publishes nothing
 npm run seed -- --approve       # walks the Publication Gate
 npm run seed:invites            # upserts the codes in BETA_INVITE_CODES
 ```
+
+All four steps above are one command — `setup:db` runs migrate → seed → seed --approve → seed:invites
+in that order, and is idempotent, so re-running it is safe:
+
+```bash
+export DATABASE_URL='<hosted>'
+export BETA_INVITE_CODES='<comma-separated codes>'
+npm run setup:db
+```
+
+`seed:invites` reads `BETA_INVITE_CODES` from the environment, not from `app/.env`, so export it in
+the same shell. It must be the same list the Vercel project carries.
 
 **Check** — expect `Published (36)` and `Withheld (4)`. The 4 are correct: `inferred` and `community-reported` evidence does not meet the publication standard (ADR 0003). If it publishes 40, the evidence domain check has regressed — stop.
 
@@ -1332,7 +1364,27 @@ curl -s -o /dev/null -w 'root %{http_code} -> %{redirect_url}\n' "$HOST/"
 
 ### A.11.3 The migration/seeding path must be repeatable
 
-Whatever you settle on — a documented manual run, or a protected admin endpoint — write it down in the ticket's resolution comment. A second environment must be standable-up without re-deriving it.
+Settled as `npm run setup:db` (from `app/`, with `DATABASE_URL` and `BETA_INVITE_CODES` exported).
+It runs migrate → seed → `seed -- --approve` → `seed:invites`, in the order
+`scripts/docker-entrypoint.sh` uses, and every step is idempotent — re-running reports
+`Skipped (already applied)` and `already present` rather than duplicating.
+
+Standing up a second environment is therefore:
+
+```bash
+export DATABASE_URL='<that environment's pooled string>'
+export BETA_INVITE_CODES='<its codes>'
+npm run setup:db
+npm run verify:seed
+```
+
+No admin endpoint was added: the seed path needs the database URL anyway, and an endpoint that
+re-seeds would be a write surface reachable from the internet for no gain over a shell.
+
+**Rehearsed, not assumed.** Run against a fresh database (`ccplatform_rehearsal`), `setup:db`
+applied 7 migrations, created 40 Data Leads and 62 Redemption Scenarios, published 36 cards and
+withheld 4, and upserted the invite codes; `verify:seed` then reported *Zero Critical Calculation
+Errors* over 360 probes and 5 golden cases. Re-running it on the same database changed nothing.
 
 ### A.11.4 Done means
 
@@ -1345,8 +1397,21 @@ Whatever you settle on — a documented manual run, or a protected admin endpoin
 
 ### A.11.5 Watch out for
 
-- **The Edge-runtime `crypto` import.** `app/src/beta/invite.ts` imports Node `crypto`, and middleware runs on Edge by default. The build warning is currently gone, but ticket 02 makes middleware do *more* — confirm it still works on the deployed host, not just locally.
-- **Cold-start pool exhaustion.** If you see intermittent connection errors under light load, the pool is the cause, not the database.
+- **The Edge-runtime `crypto` import — resolved.** `middleware.ts` declares
+  `export const runtime = 'nodejs'`, which Next 15.5 supports as stable and Vercel runs on the
+  Node.js runtime. Confirm on the deployed host that a gated request is gated (A.12.1) rather than
+  500ing; a 500 there means the middleware fell back to Edge and cannot reach the pool.
+- **Cold-start pool exhaustion.** If you see intermittent connection errors under light load, the
+  pool is the cause, not the database. `src/db/client.ts` caps it at 5 per instance — a pooled
+  provider endpoint multiplexes server-side, so a large client pool buys nothing and multiplies.
+- **`DATABASE_URL` at import time — resolved.** `client.ts` used to throw at module load, which
+  failed `next build` outright (`Failed to collect page data for /api/admin/change-feed`), because
+  the build imports every route module. The throw is now skipped during
+  `NEXT_PHASE=phase-production-build`; the first query still fails, so `/api/health` reports
+  `db: disconnected` rather than the process dying. Set the env var for the *build* environment
+  too, not only runtime.
+- **Use the pooled host.** The connection string must contain `-pooler`. The direct endpoint is for
+  `pg_dump` and session-level settings; using it under serverless load exhausts connections.
 
 ---
 

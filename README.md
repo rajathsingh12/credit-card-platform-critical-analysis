@@ -122,3 +122,24 @@ curl -s -X POST -H "Authorization: Bearer local-dev-admin-token" \
 
 `docs/runbook.md` is the step-by-step version — every stage run by hand, with verification
 queries at each step. Use it when you need to inspect the pipeline rather than just run the app.
+
+## Deploying to Vercel
+
+The hosted path is `docs/runbook.md` §A.11. In short:
+
+1. `bash app/scripts/setup-vercel.sh` — a five-stage wizard that provisions Neon, generates the
+   admin token and invite codes, writes them to `app/.env`, and walks you through the Vercel
+   project. Set **Root Directory** to `app/` in the Vercel dashboard; it is not a `vercel.json` key.
+2. With the hosted `DATABASE_URL` and `BETA_INVITE_CODES` exported:
+
+   ```bash
+   cd app
+   npm run setup:db      # migrate -> seed -> seed --approve -> seed:invites
+   npm run verify:seed   # golden-dataset check against the hosted rows
+   ```
+
+   `setup:db` is idempotent, so re-running it is safe.
+
+Two things worth knowing before you deploy: `DATABASE_URL` must be the **pooled** string (the host
+contains `-pooler`), and it must be set for the *build* environment as well as runtime, because
+`next build` imports every route module.
