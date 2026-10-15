@@ -10,3 +10,8 @@ node_modules/
 
 # Local scratch
 .scratch/
+# `vercel link` wrote these two lines. `.vercel` holds the project id (not a secret).
+# `.env*` was narrowed to `.env.local`: as written it also matched `app/.env.example`,
+# which is tracked, so a future edit to it would have been silently ignored.
+.vercel
+.env.local
