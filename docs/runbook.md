@@ -1640,6 +1640,30 @@ rm -rf /tmp/restore-pg18-data /tmp/restore-pg18.log
 
 **Rehearsal record:** walked once on 2026-10-15. Dump taken from the hosted database (PG 18.6, Neon) via `pg_dump` 18.6 — 88 KB of SQL (`--no-owner --no-acl`). Restored into a throwaway `initdb`-created PG 18 server on port 5433 (`restore_probe` database). Counts verified and matching the host exactly: cards|40, rule_versions_active|36, invite_codes|8, verification_records|40, data_leads|41, beta_events|63, contextual_reports|1, redemption_scenarios|62, sources|40. Restore wall-clock: ~0.05s for the SQL load (the dataset is small). The 7-migration + seed rebuild path (`npm run setup:db`) is the alternative when no dump exists; it takes ~30s but loses `beta_events` and `contextual_reports`, so it is the fallback, not the primary.
 
+#### Honouring the notice's deletion promises
+
+The notice on `/invite` makes two promises about deletion. Both are one command, run from `app/` with `DATABASE_URL` set to the hosted string.
+
+**A stop request** (an invitee replies asking to stop — the notice promises within 7 days):
+
+```bash
+npm run stop-request -- <invite code>
+```
+
+Revokes the code and deletes that invitee's `beta_events` rows. Their Contextual Reports survive and are now unattributed — the `contextual_report_submitted` event was the only link, and it is gone. Then strike the code → name entry in the steward's list; that file is outside the database and the command cannot reach it.
+
+**Beta close** (the notice promises usage records and the code-to-name list are deleted within 30 days of the verdict):
+
+```bash
+npm run stop-request -- --purge-all
+```
+
+Deletes every `beta_events` row and every `invite_codes` row. `contextual_reports`, the card catalog, and the rule versions are untouched — reports stay as the catalog's correction record. Delete the code-to-name list by hand.
+
+Both are idempotent: re-running a stop request on an already-revoked code reports `already revoked` and deletes nothing new.
+
+**Verified:** run against a scratch copy of the database on 2026-10-15 — a stop request deleted 683 events and revoked the code; `--purge-all` deleted 104 events and 9 codes, leaving `contextual_reports` (1) and the 40-card catalog intact.
+
 ### A.13.5 Done means
 
 - Backup taken **and** restore rehearsed, with counts verified and duration recorded.

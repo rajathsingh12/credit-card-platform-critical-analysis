@@ -19,7 +19,8 @@
     "up": "docker compose up --build -d",
     "down": "docker compose down",
     "dev:setup": "docker compose up -d postgres && sleep 2 && npm run migrate",
-    "lint": "eslint"
+    "lint": "eslint",
+    "stop-request": "tsx scripts/stop-request.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.36.0",
