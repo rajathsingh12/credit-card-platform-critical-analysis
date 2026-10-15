@@ -173,6 +173,12 @@ finish() {
 
 run_wizard() {
 
+# Fail if not run from app/ (where package.json and .env live)
+if [[ ! -f package.json ]] || [[ ! -f .env ]]; then
+  echo "Error: run this wizard from app/ (cd app && bash scripts/setup-production-safety.sh)" >&2
+  exit 1
+fi
+
 TOTAL_STAGES=4
 
 banner "Production safety — backups and uptime monitor"

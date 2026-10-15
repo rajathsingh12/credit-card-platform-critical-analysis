@@ -14,4 +14,5 @@ node_modules/
 # `.env*` was narrowed to `.env.local`: as written it also matched `app/.env.example`,
 # which is tracked, so a future edit to it would have been silently ignored.
 .vercel
+.env
 .env.local

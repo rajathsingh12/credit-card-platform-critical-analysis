@@ -25,6 +25,10 @@ chmod 700 "$BACKUP_DIR"
 
 # Load DATABASE_URL from .env, then split it into PG* env vars so the
 # connection string (and its embedded password) never appears in `ps` argv.
+if [[ ! -f ./.env ]]; then
+  echo "Error: .env not found. Run this script from app/ (where .env lives)." >&2
+  exit 1
+fi
 set -a; . ./.env; set +a
 
 if [[ -z "${DATABASE_URL:-}" ]]; then
