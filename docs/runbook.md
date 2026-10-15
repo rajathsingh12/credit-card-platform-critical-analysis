@@ -1583,6 +1583,24 @@ Two content changes:
 
 **Scope warning:** the retention and deletion promises must match what the system actually does. If the notice promises deletion within a window, the mechanism to honour it must exist — or soften the promise to what is true.
 
+#### The operator helper
+
+`app/scripts/beta-admin.sh` wraps the admin calls so no token is ever typed or pasted. Run it from `app/` — it reads `HOST` and `ADMIN_TOKEN` from `.env`.
+
+```bash
+bash scripts/beta-admin.sh code            # mint a new invite code
+bash scripts/beta-admin.sh codes           # every code and whether it is active or revoked
+bash scripts/beta-admin.sh redeem <code>   # redeem, saving the session cookie
+bash scripts/beta-admin.sh cards           # card count for that session (reports 401 clearly)
+bash scripts/beta-admin.sh leads           # the steward queue (pending Data Leads)
+bash scripts/beta-admin.sh report <id>     # read one Contextual Report
+bash scripts/beta-admin.sh revoke <code>   # revoke a code
+bash scripts/beta-admin.sh stop <code>     # stop request: revoke + delete usage records
+bash scripts/beta-admin.sh health          # health probe
+```
+
+Two traps this avoids. `$ADMIN_TOKEN` is empty in a fresh shell — `.env` is not sourced automatically, so a pasted curl sends `Authorization: Bearer ` and every admin route 401s while the response still parses as `null` under `jq`. And a dead session makes `/api/cards` return `401 {"error":"Unauthorized"}`, which `jq '.cards | length'` renders as a bare `0` that looks like an empty catalog; the `cards` command prints the status instead.
+
 ### A.13.4 A written restore procedure
 
 One page: how to bring service back after a failure. Walk it once. It is the difference between a rehearsal and a plan.
