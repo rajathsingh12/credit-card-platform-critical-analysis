@@ -3,7 +3,7 @@ import type { EvidenceStatus, RewardCurrency } from './evidence'
 
 // Money is in the minor unit (paise). `pointsPerDollar` is points per major unit (rupee),
 // so a cash-back card states its percentage directly: 1.5 = 1.5% back, earned as paise.
-export const SEED_VERIFIED_AT = '2025-01-01'
+export const SEED_VERIFIED_AT = '2026-09-29'
 export const SEED_EFFECTIVE_FROM = '2025-01-01'
 
 export type SeedRedemption = {

@@ -123,6 +123,31 @@ function InviteForm() {
               the private beta.
             </p>
 
+            <section className={styles.notice} aria-labelledby={`${uid}-notice`}>
+              <h2 id={`${uid}-notice`}>What this is and what we keep</h2>
+              <p>
+                This is a 30-day closed beta of a credit card rewards calculator, not a live product.
+              </p>
+              <p>
+                We record which card you calculated for, whether a result was shown, and how many
+                calculations you have made — all tied to your invite code — plus anything you type
+                into &ldquo;Report an issue&rdquo;. We do not store the amounts, merchants or dates
+                you enter. There is no account, no card number and no statement. Your invite code is
+                kept in a cookie on this device for 30 days.
+              </p>
+              <p>
+                Results are worked out from the issuer&rsquo;s published terms and shown with their
+                evidence status and working. They are not financial advice, and this is not a
+                channel for complaints about your issuer.
+              </p>
+              <p>
+                Within 30 days of the beta verdict, usage records and the code-to-name list are
+                deleted; reports are kept, unattributed, as the catalog&rsquo;s correction record.
+                To stop early, reply to your invite email: your code is revoked and your usage
+                records deleted within 7 days.
+              </p>
+            </section>
+
             {revoked && (
               <div className={`alert alert--warning ${styles.banner}`} role="alert">
                 Your invite code has been revoked. Contact the team for a new one.

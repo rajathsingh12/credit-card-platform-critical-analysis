@@ -511,7 +511,7 @@ curl -s -b beta-cookies.txt -X POST \
 | `result.ruleApplied` | a Rule Version UUID |
 | `result.trace` | a non-empty array — this is the Calculation Trace |
 | `ruleMeta[<ruleId>].evidenceStatus` | one of `officially-documented`, `statement-verified`, `inferred`, `community-reported` |
-| `ruleMeta[<ruleId>].sourceDate` | `2025-01-01` for seeded cards |
+| `ruleMeta[<ruleId>].sourceDate` | `2026-09-29` for seeded cards (the `SEED_VERIFIED_AT` re-check date) |
 | `ruleMeta[<ruleId>].retractedAt` | `null` |
 
 **Important:** `transactionDate` must be on or after `2025-01-01` — that is `SEED_EFFECTIVE_FROM`. An earlier date produces an Unresolved Outcome because no rule was effective yet.
@@ -1543,10 +1543,12 @@ Open `$HOST` in a browser. Confirm the invite page renders at desktop and mobile
 A backup that has never been restored is not a backup.
 
 ```bash
-# Take one (adjust to your provider's dump tooling)
-export DATABASE_URL='<hosted>'
-pg_dump "$DATABASE_URL" --no-owner --no-acl -f /tmp/ccplatform-$(date +%F).sql
-ls -lh /tmp/ccplatform-*.sql      # expect a non-trivial size
+# Take one. The hosted DB is Neon PG 18, so use pg_dump 18 (Homebrew) — see §A.13.4
+# for why the version must match. Run from app/ so .env is readable.
+PG18=/opt/homebrew/opt/postgresql@18/bin
+set -a; . ./.env; set +a
+"$PG18/pg_dump" "$DATABASE_URL" --no-owner --no-acl -f /tmp/ccplatform-$(date +%F).sql
+ls -lh /tmp/ccplatform-*.sql      # expect a non-trivial size (~88 KB)
 ```
 
 Then **restore it into a scratch database** and prove the data is there:
@@ -1577,13 +1579,66 @@ Two content changes:
 
 **The notice.** Issue 40 decided a plain-language notice goes **verbatim** on `/invite` and in the invite email: what is recorded, what is not, the cookie, the retention sentence, "not financial advice / not an issuer complaint channel", and the stop promise (revoke + delete `beta_events` within 7 days, reports stay unattributed). It cites no legislation. It is **not on the page today** — `app/src/app/invite/page.tsx` carries only a short beta-access blurb.
 
-**The verified date.** `SEED_VERIFIED_AT` in `app/src/catalog/verified-card-set.ts` is hard-coded to `2025-01-01` and rendered verbatim in the UI (`home-client.tsx`, `verified {formatDate(meta.sourceDate)}`). The app therefore claims facts were verified in January 2025. Either refresh it to the date the set was actually re-checked, or state the real date. **Do not tick this by changing only the constant** — confirm the seed script writes the new date through to the rows.
+**The verified date.** `SEED_VERIFIED_AT` in `app/src/catalog/verified-card-set.ts` is rendered verbatim in the UI (`home-client.tsx`, `verified {formatDate(meta.sourceDate)}`). It was `2025-01-01`, a nominal date the sources were never checked on, so the app claimed facts were verified in January 2025. Now set to `2026-09-29` — the date the card set's source data was last changed and re-checked against issuer terms (the Regalia Gold refresh). The seed script writes it through to `verification_records.verified_at` and the record notes (`seed-verified-cards.ts`): it updates *existing* records too, not just fresh inserts, so re-running `npm run seed` against an already-seeded database moves the date on its rows. Verified on the host: 40 records moved `2025-01-01` → `2026-09-29` with no new leads or rule-version changes.
 
 **Scope warning:** the retention and deletion promises must match what the system actually does. If the notice promises deletion within a window, the mechanism to honour it must exist — or soften the promise to what is true.
 
 ### A.13.4 A written restore procedure
 
 One page: how to bring service back after a failure. Walk it once. It is the difference between a rehearsal and a plan.
+
+The hosted database is Neon Postgres (PG 18). The dump tool must match the server major version — `pg_dump` 15 (the Homebrew default) aborts on a PG 18 server with "server version mismatch: server version 18.6, pg_dump version 15.19". Install `postgresql@18` via Homebrew (`brew install postgresql@18`, keg-only — binaries at `/opt/homebrew/opt/postgresql@18/bin`) so `pg_dump` and `psql` can talk to the server. A dump from PG 18 also restores only into a PG 18 target: it emits `SET transaction_timeout` (a PG 17+ parameter) which a PG 16 server rejects. Neon also keeps its own point-in-time restore (up to 7 days on the free plan) — use the procedure below for a tested, off-provider restore; use Neon's PITR for a fast in-place rewind.
+
+**Recovery objective:** restore the schema and seed data to a working state on a fresh database, then point the app at it. Expected restore time: under 1 minute for the SQL path (rehearsed below), plus redeploy if the `DATABASE_URL` changes.
+
+**Prerequisites:** the latest dump file (from the recurring backup, §A.13.2) or a one-off taken now; `postgresql@18` installed; the app's `ADMIN_TOKEN` and `BETA_INVITE_CODES` available to set on the new database's Vercel env.
+
+#### Restore procedure
+
+```bash
+PG18=/opt/homebrew/opt/postgresql@18/bin
+
+# 1. Take a fresh dump if you need one (the recurring job may not have today's yet).
+#    Run from app/ so .env is readable. --no-owner --no-acl so a restore into a
+#    fresh role works without permission errors.
+export DATABASE_URL='<the hosted pooled string>'
+"$PG18/pg_dump" "$DATABASE_URL" --no-owner --no-acl -f /tmp/ccplatform-restore.sql
+ls -lh /tmp/ccplatform-restore.sql      # expect ~88 KB
+
+# 2. Start a THROWAWAY PG 18 server — never restore into production.
+rm -rf /tmp/restore-pg18-data && mkdir -p /tmp/restore-pg18-data
+"$PG18/initdb" -D /tmp/restore-pg18-data -U postgres --auth=trust --no-locale -E UTF8
+"$PG18/pg_ctl" -D /tmp/restore-pg18-data -o "-p 5433" -l /tmp/restore-pg18.log start
+"$PG18/pg_isready" -p 5433 -U postgres
+"$PG18/psql" -p 5433 -U postgres -c 'CREATE DATABASE restore_probe'
+
+# 3. Restore the dump.
+time "$PG18/psql" -p 5433 -U postgres -d restore_probe -v ON_ERROR_STOP=1 < /tmp/ccplatform-restore.sql
+
+# 4. Verify the counts match production.
+"$PG18/psql" -p 5433 -U postgres -d restore_probe -tA -c "
+  SELECT 'cards', count(*) FROM cards
+  UNION ALL SELECT 'rule_versions_active', count(*) FROM rule_versions WHERE retracted_at IS NULL
+  UNION ALL SELECT 'invite_codes', count(*) FROM invite_codes
+  UNION ALL SELECT 'verification_records', count(*) FROM verification_records
+  UNION ALL SELECT 'beta_events', count(*) FROM beta_events
+  UNION ALL SELECT 'contextual_reports', count(*) FROM contextual_reports
+  UNION ALL SELECT 'redemption_scenarios', count(*) FROM redemption_scenarios"
+# expect: cards|40  rule_versions_active|36  invite_codes|8  verification_records|40
+#         beta_events|63  contextual_reports|1  redemption_scenarios|62
+
+# 5. Tear down the probe.
+"$PG18/pg_ctl" -D /tmp/restore-pg18-data stop -m fast
+rm -rf /tmp/restore-pg18-data /tmp/restore-pg18.log
+
+# 6. Real restore (data loss on the host): create a fresh Neon database, restore the
+#    dump into it (steps 1–3 against the new connection string), set the new
+#    DATABASE_URL on the Vercel project for Production + Preview, and redeploy:
+#      vercel --prod
+#    Then confirm health and the invite gate (§A.12.1) before declaring service back.
+```
+
+**Rehearsal record:** walked once on 2026-10-15. Dump taken from the hosted database (PG 18.6, Neon) via `pg_dump` 18.6 — 88 KB of SQL (`--no-owner --no-acl`). Restored into a throwaway `initdb`-created PG 18 server on port 5433 (`restore_probe` database). Counts verified and matching the host exactly: cards|40, rule_versions_active|36, invite_codes|8, verification_records|40, data_leads|41, beta_events|63, contextual_reports|1, redemption_scenarios|62, sources|40. Restore wall-clock: ~0.05s for the SQL load (the dataset is small). The 7-migration + seed rebuild path (`npm run setup:db`) is the alternative when no dump exists; it takes ~30s but loses `beta_events` and `contextual_reports`, so it is the fallback, not the primary.
 
 ### A.13.5 Done means
 

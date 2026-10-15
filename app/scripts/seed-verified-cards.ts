@@ -62,18 +62,28 @@ async function upsertVerificationRecord(
      LIMIT 1`,
     [sourceId, spec.evidenceStatus]
   )
-  if (existing.rows[0]) return existing.rows[0].id as string
+  // The re-check date (verified_at + notes) is the same for an existing record
+  // as for a fresh insert, so build it once. Without updating the existing row,
+  // an already-seeded database — the deployed host included — keeps the stale
+  // date and the UI's "verified <date>" never moves.
+  const verifiedAtIso = `${SEED_VERIFIED_AT}T00:00:00Z`
+  const notes = `${spec.sourceName}; checked ${SEED_VERIFIED_AT}`
+  if (existing.rows[0]) {
+    await client.query(
+      `UPDATE verification_records
+       SET verified_at = $1,
+           notes = $2
+       WHERE id = $3`,
+      [verifiedAtIso, notes, existing.rows[0].id]
+    )
+    return existing.rows[0].id as string
+  }
 
   const res = await client.query(
     `INSERT INTO verification_records (source_id, evidence_status, verified_at, notes)
      VALUES ($1, $2, $3, $4)
      RETURNING id`,
-    [
-      sourceId,
-      spec.evidenceStatus,
-      `${SEED_VERIFIED_AT}T00:00:00Z`,
-      `${spec.sourceName}; checked ${SEED_VERIFIED_AT}`,
-    ]
+    [sourceId, spec.evidenceStatus, verifiedAtIso, notes]
   )
   return res.rows[0].id as string
 }
